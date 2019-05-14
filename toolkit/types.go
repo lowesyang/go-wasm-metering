@@ -1,4 +1,4 @@
-package go_wasm_metering
+package toolkit
 
 type JSON = map[string]interface{}
 
@@ -11,6 +11,7 @@ type SectionHeader struct {
 type OP struct {
 	Name       string      `json:"name"`
 	ReturnType string      `json:"return_type"`
+	Type       string      `json:"type"`
 	Immediates interface{} `json:"immediates"`
 }
 
@@ -20,9 +21,9 @@ type Table struct {
 }
 
 type MemLimits struct {
-	Flags   uint64 `json:"flags"`
-	Intial  uint64 `json:"intial"`
-	Maximum uint64 `json:"maximum"`
+	Flags   uint64      `json:"flags"`
+	Intial  uint64      `json:"intial"`
+	Maximum interface{} `json:"maximum"` // to distinguish the field is nil or uint64(0)
 }
 
 type Global struct {
@@ -34,7 +35,7 @@ type Global struct {
 type CustomSec struct {
 	Name        string `json:"name"`
 	SectionName string `json:"section_name"`
-	Payload     []byte `json:"payload"`
+	Payload     string `json:"payload"`
 }
 
 type TypeEntry struct {

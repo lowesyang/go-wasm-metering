@@ -1,9 +1,6 @@
-package go_wasm_metering
+package toolkit
 
 import (
-	"encoding/json"
-	"math/big"
-	"os"
 	"reflect"
 	"strings"
 )
@@ -225,7 +222,7 @@ var (
 		0xbf: "f64.reinterpret/i64",
 	}
 
-	SECTION_IDS = map[byte]string{
+	W2J_SECTION_IDS = map[byte]string{
 		0:  "custom",
 		1:  "type",
 		2:  "import",
@@ -240,55 +237,40 @@ var (
 		11: "data",
 	}
 
-	W2J_OP_IMMEDIATES = make(JSON)
+	W2J_OP_IMMEDIATES = ReadWasmFromFile("immediates.json")
 )
-
-func init() {
-	immediates, err := os.Open("immediates.json")
-	if err != nil {
-		panic(err)
-	}
-
-	jsonParser := json.NewDecoder(immediates)
-	if err := jsonParser.Decode(&W2J_OP_IMMEDIATES); err != nil {
-		panic(err)
-	}
-}
 
 type immediataryParsers struct{}
 
-func (immediataryParsers) varuint1(stream *Stream) int8 {
+func (immediataryParsers) Varuint1(stream *Stream) int8 {
 	return int8(stream.ReadByte())
 }
 
-func (immediataryParsers) varuint32(stream *Stream) uint32 {
+func (immediataryParsers) Varuint32(stream *Stream) uint32 {
 	return uint32(DecodeULEB128(stream))
 }
 
-func (immediataryParsers) varint32(stream *Stream) int32 {
+func (immediataryParsers) Varint32(stream *Stream) int32 {
 	return int32(DecodeSLEB128(stream))
 }
 
-func (immediataryParsers) varint64(stream *Stream) int64 {
+func (immediataryParsers) Varint64(stream *Stream) int64 {
 	return int64(DecodeSLEB128(stream))
 }
 
-func (immediataryParsers) uint32(stream *Stream) uint32 {
-	buf := stream.Read(4)
-
-	return uint32(new(big.Int).SetBytes(buf).Uint64())
+func (immediataryParsers) Uint32(stream *Stream) []byte {
+	return stream.Read(4)
 }
 
-func (immediataryParsers) uint64(stream *Stream) uint64 {
-	buf := stream.Read(8)
-	return new(big.Int).SetBytes(buf).Uint64()
+func (immediataryParsers) Uint64(stream *Stream) []byte {
+	return stream.Read(8)
 }
 
-func (immediataryParsers) block_type(stream *Stream) string {
+func (immediataryParsers) Block_type(stream *Stream) string {
 	return W2J_LANGUAGE_TYPES[stream.ReadByte()]
 }
 
-func (immediataryParsers) br_table(stream *Stream) JSON {
+func (immediataryParsers) Br_table(stream *Stream) JSON {
 	jsonObj := make(JSON)
 	targets := []uint64{}
 
@@ -303,14 +285,14 @@ func (immediataryParsers) br_table(stream *Stream) JSON {
 	return jsonObj
 }
 
-func (immediataryParsers) call_indirect(stream *Stream) JSON {
+func (immediataryParsers) Call_indirect(stream *Stream) JSON {
 	jsonObj := make(JSON)
 	jsonObj["Index"] = DecodeULEB128(stream)
 	jsonObj["Reserved"] = stream.ReadByte()
 	return jsonObj
 }
 
-func (immediataryParsers) memory_immediate(stream *Stream) JSON {
+func (immediataryParsers) Memory_immediate(stream *Stream) JSON {
 	jsonObj := make(JSON)
 	jsonObj["Flags"] = DecodeULEB128(stream)
 	jsonObj["Offset"] = DecodeULEB128(stream)
@@ -319,19 +301,19 @@ func (immediataryParsers) memory_immediate(stream *Stream) JSON {
 
 type typeParsers struct{}
 
-func (typeParsers) function(stream *Stream) uint64 {
+func (typeParsers) Function(stream *Stream) uint64 {
 	return DecodeULEB128(stream)
 }
 
-func (t typeParsers) table(stream *Stream) Table {
+func (t typeParsers) Table(stream *Stream) Table {
 	typ := stream.ReadByte()
 	return Table{
 		ElementType: W2J_LANGUAGE_TYPES[typ],
-		Limits:      t.memory(stream),
+		Limits:      t.Memory(stream),
 	}
 }
 
-func (typeParsers) global(stream *Stream) Global {
+func (typeParsers) Global(stream *Stream) Global {
 	typ := stream.ReadByte()
 	mutability := stream.ReadByte()
 	return Global{
@@ -340,7 +322,7 @@ func (typeParsers) global(stream *Stream) Global {
 	}
 }
 
-func (typeParsers) memory(stream *Stream) MemLimits {
+func (typeParsers) Memory(stream *Stream) MemLimits {
 	flags := DecodeULEB128(stream)
 	intial := DecodeULEB128(stream)
 	limits := MemLimits{
@@ -353,7 +335,7 @@ func (typeParsers) memory(stream *Stream) MemLimits {
 	return limits
 }
 
-func (typeParsers) initExpr(stream *Stream) OP {
+func (typeParsers) InitExpr(stream *Stream) OP {
 	op := ParseOp(stream)
 	stream.ReadByte() // skip the `end`
 	return op
@@ -361,19 +343,20 @@ func (typeParsers) initExpr(stream *Stream) OP {
 
 type sectionParsers struct{}
 
-func (sectionParsers) custom(stream *Stream, header SectionHeader) CustomSec {
+func (sectionParsers) Custom(stream *Stream, header SectionHeader) CustomSec {
 	sec := CustomSec{Name: "custom"}
 
+	// create a new stream to read.
 	section := NewStream(stream.Read(int(header.Size)))
 	nameLen := DecodeULEB128(section)
-	name := stream.Read(int(nameLen))
+	name := section.Read(int(nameLen))
 
 	sec.SectionName = string(name)
-	sec.Payload = section.Bytes()
+	sec.Payload = section.String()
 	return sec
 }
 
-func (sectionParsers) _type(stream *Stream) TypeSec {
+func (sectionParsers) Type(stream *Stream) TypeSec {
 	numberOfEntries := DecodeULEB128(stream)
 	typSec := TypeSec{
 		Name: "type",
@@ -388,6 +371,7 @@ func (sectionParsers) _type(stream *Stream) TypeSec {
 
 		paramCount := DecodeULEB128(stream)
 
+		// parse the entries.
 		for j := uint64(0); j < paramCount; j++ {
 			typ := stream.ReadByte()
 			entry.Params = append(entry.Params, W2J_LANGUAGE_TYPES[typ])
@@ -405,7 +389,7 @@ func (sectionParsers) _type(stream *Stream) TypeSec {
 	return typSec
 }
 
-func (s sectionParsers) _import(stream *Stream) ImportSec {
+func (s sectionParsers) Import(stream *Stream) ImportSec {
 	numberOfEntries := DecodeULEB128(stream)
 	importSec := ImportSec{
 		Name: "import",
@@ -417,11 +401,11 @@ func (s sectionParsers) _import(stream *Stream) ImportSec {
 		moduleStr := stream.Read(int(moduleLen))
 
 		fieldLen := DecodeULEB128(stream)
-		fieldStr := make([]byte, fieldLen)
+		fieldStr := stream.Read(int(fieldLen))
 
 		kind := stream.ReadByte()
 		externalKind := W2J_EXTERNAL_KIND[kind]
-		returned := rParser.MethodByName(externalKind).Call([]reflect.Value{reflect.ValueOf(stream)})
+		returned := rParser.MethodByName(Ucfirst(externalKind)).Call([]reflect.Value{reflect.ValueOf(stream)})
 
 		entry := ImportEntry{
 			ModuleStr: string(moduleStr),
@@ -436,7 +420,7 @@ func (s sectionParsers) _import(stream *Stream) ImportSec {
 	return importSec
 }
 
-func (sectionParsers) function(stream *Stream) FuncSec {
+func (sectionParsers) Function(stream *Stream) FuncSec {
 	numberOfEntries := DecodeULEB128(stream)
 	funcSec := FuncSec{
 		Name: "function",
@@ -449,22 +433,23 @@ func (sectionParsers) function(stream *Stream) FuncSec {
 	return funcSec
 }
 
-func (s sectionParsers) table(stream *Stream) TableSec {
+func (s sectionParsers) Table(stream *Stream) TableSec {
 	numberOfEntries := DecodeULEB128(stream)
 	tableSec := TableSec{
 		Name: "table",
 	}
 
+	// parse table_type.
 	tparser := typeParsers{}
 	for i := uint64(0); i < numberOfEntries; i++ {
-		entry := tparser.table(stream)
+		entry := tparser.Table(stream)
 		tableSec.Entries = append(tableSec.Entries, entry)
 	}
 
 	return tableSec
 }
 
-func (sectionParsers) memory(stream *Stream) MemSec {
+func (sectionParsers) Memory(stream *Stream) MemSec {
 	numberOfEntries := DecodeULEB128(stream)
 	memSec := MemSec{
 		Name: "memory",
@@ -472,13 +457,13 @@ func (sectionParsers) memory(stream *Stream) MemSec {
 
 	tparser := typeParsers{}
 	for i := uint64(0); i < numberOfEntries; i++ {
-		entry := tparser.memory(stream)
+		entry := tparser.Memory(stream)
 		memSec.Entries = append(memSec.Entries, entry)
 	}
 	return memSec
 }
 
-func (sectionParsers) global(stream *Stream) GlobalSec {
+func (sectionParsers) Global(stream *Stream) GlobalSec {
 	numberOfEntries := DecodeULEB128(stream)
 	globalSec := GlobalSec{
 		Name: "global",
@@ -487,8 +472,8 @@ func (sectionParsers) global(stream *Stream) GlobalSec {
 	tparser := typeParsers{}
 	for i := uint64(0); i < numberOfEntries; i++ {
 		entry := GlobalEntry{
-			Type: tparser.global(stream),
-			Init: tparser.initExpr(stream),
+			Type: tparser.Global(stream),
+			Init: tparser.InitExpr(stream),
 		}
 
 		globalSec.Entries = append(globalSec.Entries, entry)
@@ -497,7 +482,7 @@ func (sectionParsers) global(stream *Stream) GlobalSec {
 	return globalSec
 }
 
-func (sectionParsers) export(stream *Stream) ExportSec {
+func (sectionParsers) Export(stream *Stream) ExportSec {
 	numberOfEntries := DecodeULEB128(stream)
 	exportSec := ExportSec{
 		Name: "export",
@@ -521,7 +506,7 @@ func (sectionParsers) export(stream *Stream) ExportSec {
 	return exportSec
 }
 
-func (sectionParsers) start(stream *Stream) StartSec {
+func (sectionParsers) Start(stream *Stream) StartSec {
 	startSec := StartSec{
 		Name:  "start",
 		Index: uint32(DecodeULEB128(stream)),
@@ -529,7 +514,7 @@ func (sectionParsers) start(stream *Stream) StartSec {
 	return startSec
 }
 
-func (sectionParsers) element(stream *Stream) ElementSec {
+func (sectionParsers) Element(stream *Stream) ElementSec {
 	numberOfEntries := DecodeULEB128(stream)
 	elSec := ElementSec{
 		Name: "element",
@@ -539,7 +524,7 @@ func (sectionParsers) element(stream *Stream) ElementSec {
 	for i := uint64(0); i < numberOfEntries; i++ {
 		entry := ElementEntry{}
 		entry.Index = uint32(DecodeULEB128(stream))
-		entry.Offset = tparser.initExpr(stream)
+		entry.Offset = tparser.InitExpr(stream)
 
 		numElem := DecodeULEB128(stream)
 		for j := uint64(0); j < numElem; j++ {
@@ -553,7 +538,7 @@ func (sectionParsers) element(stream *Stream) ElementSec {
 	return elSec
 }
 
-func (sectionParsers) code(stream *Stream) CodeSec {
+func (sectionParsers) Code(stream *Stream) CodeSec {
 	numberOfEntries := DecodeULEB128(stream)
 	codeSec := CodeSec{
 		Name: "code",
@@ -586,15 +571,17 @@ func (sectionParsers) code(stream *Stream) CodeSec {
 	return codeSec
 }
 
-func (sectionParsers) data(stream *Stream) DataSec {
+func (sectionParsers) Data(stream *Stream) DataSec {
 	numberOfEntries := DecodeULEB128(stream)
-	dataSec := DataSec{}
+	dataSec := DataSec{
+		Name: "data",
+	}
 
 	tparser := typeParsers{}
 	for i := uint64(0); i < numberOfEntries; i++ {
 		entry := DataSegment{}
 		entry.Index = uint32(DecodeULEB128(stream))
-		entry.Offset = tparser.initExpr(stream)
+		entry.Offset = tparser.InitExpr(stream)
 		segmentSize := DecodeULEB128(stream)
 		entry.Data = append([]byte{}, stream.Read(int(segmentSize))...)
 
@@ -604,7 +591,7 @@ func (sectionParsers) data(stream *Stream) DataSec {
 	return dataSec
 }
 
-func Parse(buf []byte) []JSON {
+func Wasm2Json(buf []byte) []JSON {
 	stream := NewStream(buf)
 	preramble := ParsePreramble(stream)
 	resJson := []JSON{preramble}
@@ -612,14 +599,9 @@ func Parse(buf []byte) []JSON {
 	rSecParsers := reflect.ValueOf(sectionParsers{})
 	for stream.Len() != 0 {
 		header := ParseSectionHeader(stream)
+		//fmt.Printf("%#v\n", header)
 		name := header.Name
-		switch name {
-		case "type":
-			name = "_type"
-		case "import":
-			name = "_import"
-		}
-		parser := rSecParsers.MethodByName(name)
+		parser := rSecParsers.MethodByName(Ucfirst(name))
 		in := []reflect.Value{reflect.ValueOf(stream)}
 		if parser.Type().NumIn() == 2 {
 			in = append(in, reflect.ValueOf(header))
@@ -631,6 +613,7 @@ func Parse(buf []byte) []JSON {
 		rtSec := rsec.Type()
 		for i := 0; i < rsec.NumField(); i++ {
 			jsonObj[rtSec.Field(i).Name] = rsec.Field(i).Interface()
+			//fmt.Printf("%v %v\n",rtSec.Field(i).Name,rsec.Field(i).Interface())
 		}
 		resJson = append(resJson, jsonObj)
 	}
@@ -654,7 +637,7 @@ func ParseSectionHeader(stream *Stream) SectionHeader {
 	id := stream.ReadByte()
 	return SectionHeader{
 		Id:   id,
-		Name: SECTION_IDS[id],
+		Name: W2J_SECTION_IDS[id],
 		Size: DecodeULEB128(stream),
 	}
 }
@@ -672,6 +655,7 @@ func ParseOp(stream *Stream) OP {
 	if len(fullName) < 2 {
 		name = typ
 	} else {
+		name = fullName[1]
 		finalOP.ReturnType = typ
 	}
 
@@ -685,8 +669,7 @@ func ParseOp(stream *Stream) OP {
 	immediates := W2J_OP_IMMEDIATES[immediatesKey]
 	if immediates != nil {
 		rv := reflect.ValueOf(immediataryParsers{})
-		rStream := reflect.ValueOf(stream)
-		returned := rv.MethodByName(immediates.(string)).Call([]reflect.Value{rStream})
+		returned := rv.MethodByName(Ucfirst(immediates.(string))).Call([]reflect.Value{reflect.ValueOf(stream)})
 		finalOP.Immediates = returned[0].Interface()
 	}
 

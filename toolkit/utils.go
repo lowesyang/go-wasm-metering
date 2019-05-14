@@ -1,7 +1,10 @@
-package go_wasm_metering
+package toolkit
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
+	"unicode"
 )
 
 type Stream struct {
@@ -40,6 +43,10 @@ func (s *Stream) Bytes() []byte {
 	return s.buffer.Bytes()
 }
 
+func (s *Stream) String() string {
+	return s.buffer.String()
+}
+
 func (s *Stream) Write(buf []byte) (n int, err error) {
 	n, err = s.buffer.Write(buf)
 	s.bytesWrote += n
@@ -67,42 +74,24 @@ var sevenbits = [...]byte{
 }
 
 // EncodeULEB128 appends v to b using unsigned LEB128 encoding.
-func EncodeULEB128(v uint64, stream *Stream) []byte {
-	var out []byte
-	// If it's less than or equal to 7-bit
-	if v < 0x80 {
-		return append(out, sevenbits[v])
-	}
-
+func EncodeULEB128(v uint64, stream *Stream) (out []byte) {
 	for {
 		c := uint8(v & 0x7f)
 		v >>= 7
-
 		if v != 0 {
 			c |= 0x80
 		}
-
 		out = append(out, c)
-
 		if c&0x80 == 0 {
 			break
 		}
 	}
-
 	stream.Write(out)
-	return out
+	return
 }
 
 // EncodeSLEB128 appends v to b using signed LEB128 encoding.
-func EncodeSLEB128(v int64, stream *Stream) []byte {
-	var out []byte
-	// If it's less than or equal to 7-bit
-	if v >= 0 && v <= 0x3f {
-		return append(out, sevenbits[v])
-	} else if v < 0 && v >= ^0x3f {
-		return append(out, sevenbits[0x80+v])
-	}
-
+func EncodeSLEB128(v int64, stream *Stream) (out []byte) {
 	for {
 		c := uint8(v & 0x7f)
 		s := uint8(v & 0x40)
@@ -157,10 +146,24 @@ func DecodeSLEB128(stream *Stream) (s int64) {
 	return
 }
 
-func InterfaceArr2Bytes(bytes []interface{}) []byte {
-	var out []byte
-	for _, b := range bytes {
-		out = append(out, b.(byte))
+func ReadWasmFromFile(path string) JSON {
+	obj := make(JSON)
+	file, err := os.Open(path)
+	if err != nil {
+		panic(err)
 	}
-	return out
+
+	jsonParser := json.NewDecoder(file)
+	if err := jsonParser.Decode(&obj); err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+func Ucfirst(str string) string {
+	if z := rune(str[0]); unicode.IsLower(z) {
+		return string(unicode.ToUpper(z)) + str[1:]
+	} else {
+		return str
+	}
 }

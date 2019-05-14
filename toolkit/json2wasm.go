@@ -1,8 +1,6 @@
-package go_wasm_metering
+package toolkit
 
 import (
-	"encoding/json"
-	"os"
 	"reflect"
 )
 
@@ -214,229 +212,203 @@ var (
 		"f64.reinterpret/i64": 0xbf,
 	}
 
-	J2W_OP_IMMEDIATES = make(JSON)
+	J2W_OP_IMMEDIATES = ReadWasmFromFile("immediates.json")
 )
-
-func init() {
-	immediates, err := os.Open("immediates.json")
-	if err != nil {
-		panic(err)
-	}
-
-	jsonParser := json.NewDecoder(immediates)
-	if err := jsonParser.Decode(&J2W_OP_IMMEDIATES); err != nil {
-		panic(err)
-	}
-}
 
 type typeGenerators struct{}
 
-func (t typeGenerators) function(num uint64, stream *Stream) {
+func (t typeGenerators) Function(num uint64, stream *Stream) {
 	EncodeULEB128(num, stream)
 }
 
-func (typeGenerators) table(json JSON, stream *Stream) {
-	elementType := json["element_type"].(string)
-	stream.Write([]byte{J2W_LANGUAGE_TYPES[elementType]})
-	typeGenerators{}.memory(json["limits"].(JSON), stream)
+func (typeGenerators) Table(table Table, stream *Stream) {
+	stream.Write([]byte{J2W_LANGUAGE_TYPES[table.ElementType]})
+	typeGenerators{}.Memory(table.Limits, stream)
 }
 
 // Generates a [`global_type`](https://github.com/WebAssembly/design/blob/master/BinaryEncoding.md#global_type)
-func (typeGenerators) global(json JSON, stream *Stream) {
-	stream.Write([]byte{J2W_LANGUAGE_TYPES[json["content_type"].(string)]})
-	stream.Write([]byte{json["mutability"].(byte)})
+func (typeGenerators) Global(global Global, stream *Stream) {
+	stream.Write([]byte{J2W_LANGUAGE_TYPES[global.ContentType]})
+	stream.Write([]byte{global.Mutability})
 }
 
 // Generates a [resizable_limits](https://github.com/WebAssembly/design/blob/master/BinaryEncoding.md#resizable_limits)
-func (typeGenerators) memory(json JSON, stream *Stream) {
-	maximum, maxExist := json["maximum"]
-	if maxExist {
+func (typeGenerators) Memory(mem MemLimits, stream *Stream) {
+	if mem.Maximum != nil {
 		EncodeULEB128(1, stream)
-		EncodeULEB128(maximum.(uint64), stream)
+		EncodeULEB128(mem.Intial, stream)
+		EncodeULEB128(mem.Maximum.(uint64), stream)
+	} else {
+		EncodeULEB128(0, stream)
+		EncodeULEB128(mem.Intial, stream)
 	}
 
-	EncodeULEB128(json["intial"].(uint64), stream)
 }
 
-func (typeGenerators) initExpr(json JSON, stream *Stream) {
-	GenerateOP(json, stream)
-	GenerateOP(JSON{
-		"name": "end",
-		"type": "void",
+func (typeGenerators) InitExpr(op OP, stream *Stream) {
+	GenerateOP(op, stream)
+	GenerateOP(OP{
+		Name: "end",
+		Type: "void",
 	}, stream)
 }
 
 type immediataryGenerators struct{}
 
-func (immediataryGenerators) varuint1(j interface{}, stream *Stream) *Stream {
-	data, _ := json.Marshal(j)
-	stream.Write(data)
+func (immediataryGenerators) Varuint1(j int8, stream *Stream) *Stream {
+	stream.Write([]byte{byte(j)})
 	return stream
 }
 
-func (immediataryGenerators) varuint32(j interface{}, stream *Stream) *Stream {
-	EncodeULEB128(j.(uint64), stream)
+func (immediataryGenerators) Varuint32(j uint32, stream *Stream) *Stream {
+	EncodeULEB128(uint64(j), stream)
 	return stream
 }
 
-func (immediataryGenerators) varint32(j interface{}, stream *Stream) *Stream {
-	EncodeSLEB128(j.(int64), stream)
+func (immediataryGenerators) Varint32(j int32, stream *Stream) *Stream {
+	EncodeSLEB128(int64(j), stream)
 	return stream
 }
 
-func (immediataryGenerators) varint64(j interface{}, stream *Stream) *Stream {
-	EncodeSLEB128(j.(int64), stream)
+func (immediataryGenerators) Varint64(j int64, stream *Stream) *Stream {
+	EncodeSLEB128(j, stream)
 	return stream
 }
 
-func (immediataryGenerators) uint32(j interface{}, stream *Stream) *Stream {
-	data, _ := json.Marshal(j)
-	stream.Write(data)
+func (immediataryGenerators) Uint32(j []byte, stream *Stream) *Stream {
+	stream.Write(j)
 	return stream
 }
 
-func (immediataryGenerators) uint64(j interface{}, stream *Stream) *Stream {
-	data, _ := json.Marshal(j)
-	stream.Write(data)
+func (immediataryGenerators) Uint64(j []byte, stream *Stream) *Stream {
+	stream.Write(j)
 	return stream
 }
 
-func (immediataryGenerators) block_type(j interface{}, stream *Stream) *Stream {
-	stream.Write([]byte{J2W_LANGUAGE_TYPES[j.(string)]})
+func (immediataryGenerators) Block_type(j string, stream *Stream) *Stream {
+	stream.Write([]byte{J2W_LANGUAGE_TYPES[j]})
 	return stream
 }
 
-func (immediataryGenerators) br_table(j JSON, stream *Stream) *Stream {
-	targets := j["targets"].([]interface{})
+func (immediataryGenerators) Br_table(j JSON, stream *Stream) *Stream {
+	targets := j["Targets"].([]uint64)
 	EncodeULEB128(uint64(len(targets)), stream)
 
 	for _, target := range targets {
-		EncodeULEB128(target.(uint64), stream)
+		EncodeULEB128(target, stream)
 	}
-	EncodeULEB128(j["defaultTarget"].(uint64), stream)
+	EncodeULEB128(j["DefaultTarget"].(uint64), stream)
 	return stream
 }
 
-func (immediataryGenerators) call_indirect(j JSON, stream *Stream) *Stream {
-	index := j["index"]
-	reserved := j["reserved"].(byte)
+func (immediataryGenerators) Call_indirect(j JSON, stream *Stream) *Stream {
+	index := j["Index"]
+	reserved := j["Reserved"].(byte)
 	EncodeULEB128(index.(uint64), stream)
 	stream.Write([]byte{reserved})
 	return stream
 }
 
-func (immediataryGenerators) memory_immediate(j JSON, stream *Stream) *Stream {
-	EncodeULEB128(j["flags"].(uint64), stream)
-	EncodeULEB128(j["flags"].(uint64), stream)
+func (immediataryGenerators) Memory_immediate(j JSON, stream *Stream) *Stream {
+	EncodeULEB128(j["Flags"].(uint64), stream)
+	EncodeULEB128(j["Offset"].(uint64), stream)
 	return stream
 }
 
 type entryGenerators struct{}
 
-func (entryGenerators) _type(entry JSON, stream *Stream) []byte {
+func (entryGenerators) Type(entry TypeEntry, stream *Stream) []byte {
 	// a single type entry binary encoded
-	stream.WriteByte(J2W_LANGUAGE_TYPES[entry["form"].(string)])
+	stream.WriteByte(J2W_LANGUAGE_TYPES[entry.Form])
 
 	// number of parameters
-	params := entry["params"].([]interface{})
-	paramsLen := len(params)
+	paramsLen := len(entry.Params)
 	EncodeULEB128(uint64(paramsLen), stream)
 	if paramsLen != 0 {
 		paramsType := make([]byte, 0, paramsLen)
-		for _, typ := range params {
-			paramsType = append(paramsType, J2W_LANGUAGE_TYPES[typ.(string)])
+		for _, typ := range entry.Params {
+			paramsType = append(paramsType, J2W_LANGUAGE_TYPES[typ])
 		}
 		stream.Write(paramsType)
 	}
 
 	// number of return types
-	returnType, returnExist := entry["return_type"]
-	if returnExist {
-		stream.Write([]byte{0x1})
-		stream.Write([]byte{J2W_LANGUAGE_TYPES[returnType.(string)]})
+	if entry.ReturnType != "" {
+		stream.Write([]byte{1})
+		stream.Write([]byte{J2W_LANGUAGE_TYPES[entry.ReturnType]})
 	} else {
-		stream.Write([]byte{0x0})
+		stream.Write([]byte{0})
 	}
 
 	return stream.Bytes()
 }
 
-func (entryGenerators) _import(entry JSON, stream *Stream) {
+func (entryGenerators) Import(entry ImportEntry, stream *Stream) {
 	// write the module string
-	moduleStr := entry["module_str"].(string)
+	moduleStr := entry.ModuleStr
 	EncodeULEB128(uint64(len(moduleStr)), stream)
 	stream.Write([]byte(moduleStr))
 	// write the field string
-	fieldStr := entry["field_str"].(string)
+	fieldStr := entry.FieldStr
 	EncodeULEB128(uint64(len(fieldStr)), stream)
 	stream.Write([]byte(fieldStr))
 
-	kind := entry["kind"].(string)
-	stream.Write([]byte{J2W_EXTERNAL_KIND[kind]})
+	stream.Write([]byte{J2W_EXTERNAL_KIND[entry.Kind]})
 
-	typ := entry["type"].(string)
 	typeGen := reflect.ValueOf(typeGenerators{})
-	typeGen.MethodByName(kind).Call([]reflect.Value{reflect.ValueOf(typ), reflect.ValueOf(stream)})
+	typeGen.MethodByName(Ucfirst(entry.Kind)).Call([]reflect.Value{reflect.ValueOf(entry.Type), reflect.ValueOf(stream)})
 }
 
-func (entryGenerators) function(entry uint64, stream *Stream) []byte {
+func (entryGenerators) Function(entry uint64, stream *Stream) []byte {
 	EncodeULEB128(entry, stream)
 	return stream.Bytes()
 }
 
-func (entryGenerators) table(j JSON, stream *Stream) {
-	typeGenerators{}.table(j, stream)
+func (entryGenerators) Table(j Table, stream *Stream) {
+	typeGenerators{}.Table(j, stream)
 }
 
-func (entryGenerators) global(entry JSON, stream *Stream) *Stream {
-	typ := entry["type"]
-	init := entry["init"]
+func (entryGenerators) Global(entry GlobalEntry, stream *Stream) *Stream {
 	typeGen := typeGenerators{}
-	typeGen.global(typ.(JSON), stream)
-	typeGen.initExpr(init.(JSON), stream)
+	typeGen.Global(entry.Type, stream)
+	typeGen.InitExpr(entry.Init, stream)
 	return stream
 }
 
-func (entryGenerators) memory(entry JSON, stream *Stream) {
-	typeGenerators{}.memory(entry, stream)
+func (entryGenerators) Memory(entry MemLimits, stream *Stream) {
+	typeGenerators{}.Memory(entry, stream)
 }
 
-func (entryGenerators) export(entry JSON, stream *Stream) *Stream {
-	fieldStr := entry["field_str"].(string)
-	strLen := len(fieldStr)
-	EncodeULEB128(uint64(strLen), stream)
-	stream.Write([]byte(fieldStr))
-	stream.Write([]byte{J2W_EXTERNAL_KIND[entry["kind"].(string)]})
-	EncodeULEB128(entry["index"].(uint64), stream)
+func (entryGenerators) Export(entry ExportEntry, stream *Stream) *Stream {
+	EncodeULEB128(uint64(len(entry.FieldStr)), stream)
+	stream.Write([]byte(entry.FieldStr))
+	stream.Write([]byte{J2W_EXTERNAL_KIND[entry.Kind]})
+	EncodeULEB128(uint64(entry.Index), stream)
 	return stream
 }
 
-func (entryGenerators) element(entry JSON, stream *Stream) *Stream {
-	EncodeULEB128(entry["index"].(uint64), stream)
-	typeGenerators{}.initExpr(entry["offset"].(JSON), stream)
-	elms := entry["elements"].([]interface{})
-	EncodeULEB128(uint64(len(elms)), stream)
-	for _, elem := range elms {
-		EncodeULEB128(elem.(uint64), stream)
+func (entryGenerators) Element(entry ElementEntry, stream *Stream) *Stream {
+	EncodeULEB128(uint64(entry.Index), stream)
+	typeGenerators{}.InitExpr(entry.Offset, stream)
+	EncodeULEB128(uint64(len(entry.Elements)), stream)
+	for _, elem := range entry.Elements {
+		EncodeULEB128(elem, stream)
 	}
 	return stream
 }
 
-func (entryGenerators) code(entry JSON, stream *Stream) *Stream {
+func (entryGenerators) Code(entry CodeBody, stream *Stream) *Stream {
 	codeStream := NewStream(nil)
 	// write the locals
-	locals := entry["locals"].([]interface{})
-	EncodeULEB128(uint64(len(locals)), codeStream)
-	for _, local := range locals {
-		localJson := local.(JSON)
-		EncodeULEB128(localJson["count"].(uint64), stream)
-		codeStream.Write([]byte{J2W_LANGUAGE_TYPES[localJson["type"].(string)]})
+	EncodeULEB128(uint64(len(entry.Locals)), codeStream)
+	for _, local := range entry.Locals {
+		EncodeULEB128(uint64(local.Count), codeStream)
+		codeStream.Write([]byte{J2W_LANGUAGE_TYPES[local.Type]})
 	}
 
 	// write opcode
-	codes := entry["code"].([]interface{})
-	for _, op := range codes {
-		GenerateOP(op.(JSON), stream)
+	for _, op := range entry.Code {
+		GenerateOP(op, codeStream)
 	}
 
 	EncodeULEB128(uint64(codeStream.bytesWrote), stream)
@@ -444,28 +416,26 @@ func (entryGenerators) code(entry JSON, stream *Stream) *Stream {
 	return stream
 }
 
-func (entryGenerators) data(entry JSON, stream *Stream) *Stream {
-	EncodeULEB128(entry["index"].(uint64), stream)
-	typeGenerators{}.initExpr(entry["offset"].(JSON), stream)
-	data := InterfaceArr2Bytes(entry["data"].([]interface{}))
-	EncodeULEB128(uint64(len(data)), stream)
-	stream.Write(data)
+func (entryGenerators) Data(entry DataSegment, stream *Stream) *Stream {
+	EncodeULEB128(uint64(entry.Index), stream)
+	typeGenerators{}.InitExpr(entry.Offset, stream)
+	EncodeULEB128(uint64(len(entry.Data)), stream)
+	stream.Write(entry.Data)
 	return stream
 }
 
-func Generate(j []interface{}, stream *Stream) *Stream {
-	if stream == nil {
-		stream = NewStream(nil)
-	}
-
+func Json2Wasm(j []JSON) []byte {
+	stream := NewStream(nil)
 	preamble := j[0]
-	GeneratePreramble(preamble.(JSON), stream)
-	rest := j[1:]
-	for _, item := range rest {
-		GenerateSection(item.(JSON), stream)
+	GeneratePreramble(preamble, stream)
+	if len(j) > 1 {
+		rest := j[1:]
+		for _, item := range rest {
+			GenerateSection(item, stream)
+		}
 	}
 
-	return stream
+	return stream.Bytes()
 }
 
 func GeneratePreramble(j JSON, stream *Stream) *Stream {
@@ -473,39 +443,33 @@ func GeneratePreramble(j JSON, stream *Stream) *Stream {
 		stream = NewStream(nil)
 	}
 
-	magicBytes, _ := json.Marshal(j["magic"])
-	verBytes, _ := json.Marshal(j["version"])
-	stream.Write(magicBytes)
-	stream.Write(verBytes)
+	stream.Write(j["Magic"].([]byte))
+	stream.Write(j["Version"].([]byte))
+
 	return stream
 }
 
-func GenerateOP(j JSON, stream *Stream) *Stream {
+func GenerateOP(op OP, stream *Stream) *Stream {
 	if stream == nil {
 		stream = NewStream(nil)
 	}
 
-	name := j["name"].(string)
-	immediateKey := name
-	returnType, exist := j["return_type"]
-	if exist {
-		name = returnType.(string) + "." + name
+	name := op.Name
+	if op.ReturnType != "" {
+		name = op.ReturnType + "." + name
 	}
 
 	stream.Write([]byte{J2W_OPCODES[name]})
 
+	immediateKey := op.Name
 	if immediateKey == "const" {
-		if returnType != nil {
-			immediateKey = returnType.(string)
-		} else {
-			immediateKey = ""
-		}
+		immediateKey = op.ReturnType
 	}
 	immediates, exist := J2W_OP_IMMEDIATES[immediateKey]
 	if exist {
 		immGen := reflect.ValueOf(immediataryGenerators{})
-		immGen.MethodByName(immediates.(string)).Call([]reflect.Value{
-			reflect.ValueOf(j["immediates"]),
+		immGen.MethodByName(Ucfirst(immediates.(string))).Call([]reflect.Value{
+			reflect.ValueOf(op.Immediates),
 			reflect.ValueOf(stream),
 		})
 	}
@@ -517,31 +481,26 @@ func GenerateSection(j JSON, stream *Stream) *Stream {
 		stream = NewStream(nil)
 	}
 
-	name := j["name"].(string)
+	name := j["Name"].(string)
 	payload := NewStream(nil)
 	stream.Write([]byte{J2W_SECTION_IDS[name]})
 
 	if name == "custom" {
-		sectionName := j["sectionName"]
-		EncodeULEB128(uint64(reflect.ValueOf(sectionName).Len()), payload)
-		secNameBytes, _ := json.Marshal(sectionName)
-		payload.Write(secNameBytes)
-		payload.Write(InterfaceArr2Bytes(j["payload"].([]interface{})))
+		sectionName := j["SectionName"].(string)
+		EncodeULEB128(uint64(len(sectionName)), payload)
+		payload.Write([]byte(sectionName))
+		payload.Write([]byte(j["Payload"].(string)))
 	} else if name == "start" {
-		EncodeULEB128(j["index"].(uint64), stream)
+		EncodeULEB128(uint64(j["Index"].(uint32)), payload)
 	} else {
-		switch name {
-		case "type":
-			name = "_type"
-		case "import":
-			name = "_import"
-		}
 		entryGen := reflect.ValueOf(entryGenerators{})
-		rEntries := reflect.ValueOf(j["entries"])
-		EncodeULEB128(uint64(rEntries.Len()), stream)
-		for i := 0; i < rEntries.Len(); i++ {
-			val := rEntries.Index(i)
-			entryGen.MethodByName(name).Call([]reflect.Value{val, reflect.ValueOf(payload)})
+		entries := reflect.ValueOf(j["Entries"])
+		EncodeULEB128(uint64(entries.Len()), payload)
+		//fmt.Printf("Gen %v\n", name)
+		method := entryGen.MethodByName(Ucfirst(name))
+		for i := 0; i < entries.Len(); i++ {
+			entry := entries.Index(i)
+			method.Call([]reflect.Value{entry, reflect.ValueOf(payload)})
 		}
 	}
 
