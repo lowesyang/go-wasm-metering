@@ -1,6 +1,6 @@
 package go_wasm_metering
 
-type JSON map[string]interface{}
+type JSON = map[string]interface{}
 
 type SectionHeader struct {
 	Id   byte   `json:"id"`

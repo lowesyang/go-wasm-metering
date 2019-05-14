@@ -3,6 +3,7 @@ package go_wasm_metering
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 )
 
 var (
@@ -235,19 +236,34 @@ func (t typeGenerators) function(num uint64, stream *Stream) {
 }
 
 func (typeGenerators) table(json JSON, stream *Stream) {
-
+	elementType := json["element_type"].(string)
+	stream.Write([]byte{J2W_LANGUAGE_TYPES[elementType]})
+	typeGenerators{}.memory(json["limits"].(JSON), stream)
 }
 
+// Generates a [`global_type`](https://github.com/WebAssembly/design/blob/master/BinaryEncoding.md#global_type)
 func (typeGenerators) global(json JSON, stream *Stream) {
-
+	stream.Write([]byte{J2W_LANGUAGE_TYPES[json["content_type"].(string)]})
+	stream.Write([]byte{json["mutability"].(byte)})
 }
 
+// Generates a [resizable_limits](https://github.com/WebAssembly/design/blob/master/BinaryEncoding.md#resizable_limits)
 func (typeGenerators) memory(json JSON, stream *Stream) {
+	maximum, maxExist := json["maximum"]
+	if maxExist {
+		EncodeULEB128(1, stream)
+		EncodeULEB128(maximum.(uint64), stream)
+	}
 
+	EncodeULEB128(json["intial"].(uint64), stream)
 }
 
 func (typeGenerators) initExpr(json JSON, stream *Stream) {
-
+	GenerateOP(json, stream)
+	GenerateOP(JSON{
+		"name": "end",
+		"type": "void",
+	}, stream)
 }
 
 type immediataryGenerators struct{}
@@ -291,11 +307,11 @@ func (immediataryGenerators) block_type(j interface{}, stream *Stream) *Stream {
 }
 
 func (immediataryGenerators) br_table(j JSON, stream *Stream) *Stream {
-	targets := j["targets"].([]uint64)
+	targets := j["targets"].([]interface{})
 	EncodeULEB128(uint64(len(targets)), stream)
 
 	for _, target := range targets {
-		EncodeULEB128(target, stream)
+		EncodeULEB128(target.(uint64), stream)
 	}
 	EncodeULEB128(j["defaultTarget"].(uint64), stream)
 	return stream
@@ -317,10 +333,139 @@ func (immediataryGenerators) memory_immediate(j JSON, stream *Stream) *Stream {
 
 type entryGenerators struct{}
 
-func Generate(j JSON, stream *Stream) *Stream {
+func (entryGenerators) _type(entry JSON, stream *Stream) []byte {
+	// a single type entry binary encoded
+	stream.WriteByte(J2W_LANGUAGE_TYPES[entry["form"].(string)])
+
+	// number of parameters
+	params := entry["params"].([]interface{})
+	paramsLen := len(params)
+	EncodeULEB128(uint64(paramsLen), stream)
+	if paramsLen != 0 {
+		paramsType := make([]byte, 0, paramsLen)
+		for _, typ := range params {
+			paramsType = append(paramsType, J2W_LANGUAGE_TYPES[typ.(string)])
+		}
+		stream.Write(paramsType)
+	}
+
+	// number of return types
+	returnType, returnExist := entry["return_type"]
+	if returnExist {
+		stream.Write([]byte{0x1})
+		stream.Write([]byte{J2W_LANGUAGE_TYPES[returnType.(string)]})
+	} else {
+		stream.Write([]byte{0x0})
+	}
+
+	return stream.Bytes()
+}
+
+func (entryGenerators) _import(entry JSON, stream *Stream) {
+	// write the module string
+	moduleStr := entry["module_str"].(string)
+	EncodeULEB128(uint64(len(moduleStr)), stream)
+	stream.Write([]byte(moduleStr))
+	// write the field string
+	fieldStr := entry["field_str"].(string)
+	EncodeULEB128(uint64(len(fieldStr)), stream)
+	stream.Write([]byte(fieldStr))
+
+	kind := entry["kind"].(string)
+	stream.Write([]byte{J2W_EXTERNAL_KIND[kind]})
+
+	typ := entry["type"].(string)
+	typeGen := reflect.ValueOf(typeGenerators{})
+	typeGen.MethodByName(kind).Call([]reflect.Value{reflect.ValueOf(typ), reflect.ValueOf(stream)})
+}
+
+func (entryGenerators) function(entry uint64, stream *Stream) []byte {
+	EncodeULEB128(entry, stream)
+	return stream.Bytes()
+}
+
+func (entryGenerators) table(j JSON, stream *Stream) {
+	typeGenerators{}.table(j, stream)
+}
+
+func (entryGenerators) global(entry JSON, stream *Stream) *Stream {
+	typ := entry["type"]
+	init := entry["init"]
+	typeGen := typeGenerators{}
+	typeGen.global(typ.(JSON), stream)
+	typeGen.initExpr(init.(JSON), stream)
+	return stream
+}
+
+func (entryGenerators) memory(entry JSON, stream *Stream) {
+	typeGenerators{}.memory(entry, stream)
+}
+
+func (entryGenerators) export(entry JSON, stream *Stream) *Stream {
+	fieldStr := entry["field_str"].(string)
+	strLen := len(fieldStr)
+	EncodeULEB128(uint64(strLen), stream)
+	stream.Write([]byte(fieldStr))
+	stream.Write([]byte{J2W_EXTERNAL_KIND[entry["kind"].(string)]})
+	EncodeULEB128(entry["index"].(uint64), stream)
+	return stream
+}
+
+func (entryGenerators) element(entry JSON, stream *Stream) *Stream {
+	EncodeULEB128(entry["index"].(uint64), stream)
+	typeGenerators{}.initExpr(entry["offset"].(JSON), stream)
+	elms := entry["elements"].([]interface{})
+	EncodeULEB128(uint64(len(elms)), stream)
+	for _, elem := range elms {
+		EncodeULEB128(elem.(uint64), stream)
+	}
+	return stream
+}
+
+func (entryGenerators) code(entry JSON, stream *Stream) *Stream {
+	codeStream := NewStream(nil)
+	// write the locals
+	locals := entry["locals"].([]interface{})
+	EncodeULEB128(uint64(len(locals)), codeStream)
+	for _, local := range locals {
+		localJson := local.(JSON)
+		EncodeULEB128(localJson["count"].(uint64), stream)
+		codeStream.Write([]byte{J2W_LANGUAGE_TYPES[localJson["type"].(string)]})
+	}
+
+	// write opcode
+	codes := entry["code"].([]interface{})
+	for _, op := range codes {
+		GenerateOP(op.(JSON), stream)
+	}
+
+	EncodeULEB128(uint64(codeStream.bytesWrote), stream)
+	stream.Write(codeStream.Bytes())
+	return stream
+}
+
+func (entryGenerators) data(entry JSON, stream *Stream) *Stream {
+	EncodeULEB128(entry["index"].(uint64), stream)
+	typeGenerators{}.initExpr(entry["offset"].(JSON), stream)
+	data := InterfaceArr2Bytes(entry["data"].([]interface{}))
+	EncodeULEB128(uint64(len(data)), stream)
+	stream.Write(data)
+	return stream
+}
+
+func Generate(j []interface{}, stream *Stream) *Stream {
 	if stream == nil {
 		stream = NewStream(nil)
 	}
+
+	preamble := j[0]
+	GeneratePreramble(preamble.(JSON), stream)
+	rest := j[1:]
+	for _, item := range rest {
+		GenerateSection(item.(JSON), stream)
+	}
+
+	return stream
 }
 
 func GeneratePreramble(j JSON, stream *Stream) *Stream {
@@ -328,11 +473,8 @@ func GeneratePreramble(j JSON, stream *Stream) *Stream {
 		stream = NewStream(nil)
 	}
 
-	magic := j["magic"]
-	version := j["version"]
-
-	magicBytes, _ := json.Marshal(magic)
-	verBytes, _ := json.Marshal(version)
+	magicBytes, _ := json.Marshal(j["magic"])
+	verBytes, _ := json.Marshal(j["version"])
 	stream.Write(magicBytes)
 	stream.Write(verBytes)
 	return stream
@@ -345,8 +487,8 @@ func GenerateOP(j JSON, stream *Stream) *Stream {
 
 	name := j["name"].(string)
 	immediateKey := name
-	returnType := j["return_type"]
-	if returnType != nil {
+	returnType, exist := j["return_type"]
+	if exist {
 		name = returnType.(string) + "." + name
 	}
 
@@ -361,6 +503,50 @@ func GenerateOP(j JSON, stream *Stream) *Stream {
 	}
 	immediates, exist := J2W_OP_IMMEDIATES[immediateKey]
 	if exist {
-
+		immGen := reflect.ValueOf(immediataryGenerators{})
+		immGen.MethodByName(immediates.(string)).Call([]reflect.Value{
+			reflect.ValueOf(j["immediates"]),
+			reflect.ValueOf(stream),
+		})
 	}
+	return stream
+}
+
+func GenerateSection(j JSON, stream *Stream) *Stream {
+	if stream == nil {
+		stream = NewStream(nil)
+	}
+
+	name := j["name"].(string)
+	payload := NewStream(nil)
+	stream.Write([]byte{J2W_SECTION_IDS[name]})
+
+	if name == "custom" {
+		sectionName := j["sectionName"]
+		EncodeULEB128(uint64(reflect.ValueOf(sectionName).Len()), payload)
+		secNameBytes, _ := json.Marshal(sectionName)
+		payload.Write(secNameBytes)
+		payload.Write(InterfaceArr2Bytes(j["payload"].([]interface{})))
+	} else if name == "start" {
+		EncodeULEB128(j["index"].(uint64), stream)
+	} else {
+		switch name {
+		case "type":
+			name = "_type"
+		case "import":
+			name = "_import"
+		}
+		entryGen := reflect.ValueOf(entryGenerators{})
+		rEntries := reflect.ValueOf(j["entries"])
+		EncodeULEB128(uint64(rEntries.Len()), stream)
+		for i := 0; i < rEntries.Len(); i++ {
+			val := rEntries.Index(i)
+			entryGen.MethodByName(name).Call([]reflect.Value{val, reflect.ValueOf(payload)})
+		}
+	}
+
+	// write the size of the payload.
+	EncodeULEB128(uint64(payload.bytesWrote), stream)
+	stream.Write(payload.Bytes())
+	return stream
 }

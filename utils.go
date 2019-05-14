@@ -5,9 +5,10 @@ import (
 )
 
 type Stream struct {
-	length    int
-	bytesRead int
-	buffer    *bytes.Buffer
+	length     int
+	bytesRead  int
+	bytesWrote int
+	buffer     *bytes.Buffer
 }
 
 func NewStream(buf []byte) *Stream {
@@ -40,11 +41,18 @@ func (s *Stream) Bytes() []byte {
 }
 
 func (s *Stream) Write(buf []byte) (n int, err error) {
-	return s.buffer.Write(buf)
+	n, err = s.buffer.Write(buf)
+	s.bytesWrote += n
+	return
 }
 
 func (s *Stream) WriteByte(c byte) error {
-	return s.buffer.WriteByte(c)
+	err := s.buffer.WriteByte(c)
+	if err != nil {
+		return err
+	}
+	s.bytesWrote += 1
+	return nil
 }
 
 var sevenbits = [...]byte{
@@ -147,4 +155,12 @@ func DecodeSLEB128(stream *Stream) (s int64) {
 	}
 
 	return
+}
+
+func InterfaceArr2Bytes(bytes []interface{}) []byte {
+	var out []byte
+	for _, b := range bytes {
+		out = append(out, b.(byte))
+	}
+	return out
 }
