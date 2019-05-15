@@ -2,6 +2,7 @@ package toolkit
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
@@ -47,6 +48,17 @@ func TestCustomSection(t *testing.T) {
 //
 //	}
 //}
+func readWasmModule(path string) ([]JSON, error) {
+	var jsonArr []JSON
+	jsonData, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if err = json.Unmarshal(jsonData, &jsonArr); err != nil {
+		return nil, err
+	}
+	return jsonArr, nil
+}
 
 func TestBasicTest(t *testing.T) {
 	dirName := path.Join("test", "wasm")
@@ -71,6 +83,26 @@ func TestBasicTest(t *testing.T) {
 	}
 
 	fmt.Printf("total failed case %d\n", failed)
+
+	dirName = path.Join("test", "json")
+	dir, err = ioutil.ReadDir(dirName)
+	assert.Nil(t, err)
+	for _, fi := range dir {
+		if fi.IsDir() {
+			continue
+		}
+
+		jsonObj, err := readWasmModule(path.Join(dirName, fi.Name()))
+		assert.Nil(t, err)
+		fmt.Printf("%#v\n", jsonObj)
+
+		wasm := Json2Wasm(jsonObj)
+		jsonObj2 := Wasm2Json(wasm)
+		fmt.Printf("%#v\n", jsonObj2)
+
+		assert.Equal(t, true, assert.ObjectsAreEqual(jsonObj, jsonObj2))
+	}
+
 }
 
 func TestText2Json(t *testing.T) {

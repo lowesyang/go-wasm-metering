@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	defaultCostTable = "defaultCostTable.json"
-	defaultModuleStr = "metering"
-	defaultFieldStr  = "usegas"
-	defaultMeterType = "i32"
-	defaultCost      = 0
+	defaultCostTablePath = "defaultCostTable.json"
+	defaultModuleStr     = "metering"
+	defaultFieldStr      = "usegas"
+	defaultMeterType     = "i32"
+	defaultCost          = 0
 )
 
 var (
@@ -32,8 +32,11 @@ var (
 
 // MeterWASM injects metering into WebAssembly binary code.
 // This func is the real exported function used by outer callers.
-func (m *Metering) MeterWASM(wasm []byte, opts *Options) ([]byte, error) {
+func MeterWASM(wasm []byte, opts *Options) ([]byte, error) {
 	module := toolkit.Wasm2Json(wasm)
+	if opts == nil {
+		opts = &Options{}
+	}
 	metering, err := newMetring(*opts)
 	if err != nil {
 		return nil, err
@@ -60,7 +63,7 @@ type Metering struct {
 func newMetring(opts Options) (*Metering, error) {
 	// set defaults.
 	if opts.CostTable == "" {
-		opts.CostTable = defaultCostTable
+		opts.CostTable = defaultCostTablePath
 	}
 
 	if opts.ModuleStr == "" {
@@ -96,40 +99,48 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 	// find section.
 	findSection := func(module []toolkit.JSON, sectionName string) toolkit.JSON {
 		for _, section := range module {
-			if section["Name"].(string) == sectionName {
-				return section
+			if name, exist := section["Name"]; exist {
+				if name.(string) == sectionName {
+					return section
+				}
 			}
 		}
 		return nil
 	}
 
 	// create section.
-	createSection := func(module []toolkit.JSON, sectionName string) {
+	createSection := func(module []toolkit.JSON, sectionName string) []toolkit.JSON {
 		newSectionId := toolkit.J2W_SECTION_IDS[sectionName]
 		for i, section := range module {
-			secId, exist := toolkit.J2W_SECTION_IDS[section["Name"].(string)]
-			if exist && newSectionId < secId {
-				rest := module[i+1:]
-				// insert the section at pos `i`
-				module = append(module[:i], toolkit.JSON{
-					"Name":    sectionName,
-					"Entries": []interface{}{},
-				})
-				module = append(module, rest...)
-				return
+			name, exist := section["Name"]
+			if exist {
+				secId, exist := toolkit.J2W_SECTION_IDS[name.(string)]
+				fmt.Printf("%v %v %v\n", name, secId, exist)
+				if exist && secId > 0 && newSectionId < secId {
+					fmt.Println("inject section")
+					rest := append([]toolkit.JSON{}, module[i+1:]...)
+					// insert the section at pos `i`
+					module = append(module[:i], toolkit.JSON{
+						"Name":    sectionName,
+						"Entries": []interface{}{},
+					})
+					module = append(module, rest...)
+					break
+				}
 			}
 		}
+		return module
 	}
 
-	// add necessary sections if and only if they don't exist.
+	// add necessary `type` and `import` sections if and only if they don't exist.
 	if findSection(module, "type") == nil {
-		createSection(module, "type")
+		module = createSection(module, "type")
 	}
 	if findSection(module, "import") == nil {
-		createSection(module, "import")
+		module = createSection(module, "import")
 	}
 
-	importJson := toolkit.JSON{
+	importEntry := toolkit.JSON{
 		"ModuleStr": m.opts.ModuleStr,
 		"FieldStr":  m.opts.FieldStr,
 		"Kind":      "function",
@@ -150,15 +161,20 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 	copy(newModule, module)
 
 	for _, section := range newModule {
-		sectionName := section["Name"].(string)
-		switch sectionName {
+		sectionName, exist := section["Name"]
+		if !exist {
+			continue
+		}
+		switch sectionName.(string) {
 		case "type":
 			entries := section["Entries"].([]interface{})
 			entries = append(entries, importType)
 			section["Entries"] = entries
-			importJson["Type"] = len(entries)
+			importEntry["Type"] = len(entries) - 1
+			// save for use for the code section.
 			typeModule = section
 		case "function":
+			// save for use for the code section.
 			functionModule = section
 		case "import":
 			entries := section["Entries"].([]interface{})
@@ -172,8 +188,10 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 					funcIndex += 1
 				}
 			}
-			entries = append(entries, importJson)
+			entries = append(entries, importEntry)
+			// append the metering import.
 			section["Entries"] = entries
+			fmt.Printf("%#v\n", section)
 		case "export":
 			entries := section["Entries"].([]interface{})
 			for _, entry := range entries {
@@ -222,6 +240,13 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 
 // getCost returns the cost of an operation for the entry in a section from the cost table.
 func (m *Metering) getCost(j interface{}, costTable toolkit.JSON) (cost uint64) {
+	var costDefault uint64
+	if dc, exist := costTable["DEFAULT"]; exist {
+		costDefault = dc.(uint64)
+	} else {
+		costDefault = defaultCost
+	}
+
 	switch jj := j.(type) {
 	case []interface{}:
 		for _, el := range jj {
@@ -239,10 +264,10 @@ func (m *Metering) getCost(j interface{}, costTable toolkit.JSON) (cost uint64) 
 		if exist {
 			cost = c.(uint64)
 		} else {
-			cost = defaultCost
+			cost = costDefault
 		}
 	default:
-		cost = defaultCost
+		cost = costDefault
 	}
 	return
 }

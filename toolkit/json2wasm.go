@@ -445,8 +445,15 @@ func GeneratePreramble(j JSON, stream *Stream) *Stream {
 		stream = NewStream(nil)
 	}
 
-	stream.Write(j["Magic"].([]byte))
-	stream.Write(j["Version"].([]byte))
+	magic, exist := j["Magic"]
+	if exist {
+		stream.Write(magic.([]byte))
+	}
+
+	version, exist := j["Version"]
+	if exist {
+		stream.Write(version.([]byte))
+	}
 
 	return stream
 }
@@ -482,7 +489,11 @@ func GenerateSection(j JSON, stream *Stream) *Stream {
 		stream = NewStream(nil)
 	}
 
-	name := j["Name"].(string)
+	var name string
+	nameinterf, exist := j["Name"]
+	if exist {
+		name = nameinterf.(string)
+	}
 	payload := NewStream(nil)
 	stream.Write([]byte{J2W_SECTION_IDS[name]})
 
@@ -494,13 +505,16 @@ func GenerateSection(j JSON, stream *Stream) *Stream {
 	} else if name == "start" {
 		EncodeULEB128(uint64(j["Index"].(uint32)), payload)
 	} else {
-		entries := reflect.ValueOf(j["Entries"])
-		EncodeULEB128(uint64(entries.Len()), payload)
-		//fmt.Printf("Gen %v\n", name)
-		method := entryGen.MethodByName(Ucfirst(name))
-		for i := 0; i < entries.Len(); i++ {
-			entry := entries.Index(i)
-			method.Call([]reflect.Value{entry, reflect.ValueOf(payload)})
+		entries, exist := j["Entries"]
+		if exist {
+			entries := reflect.ValueOf(entries)
+			EncodeULEB128(uint64(entries.Len()), payload)
+			//fmt.Printf("Gen %v\n", name)
+			method := entryGen.MethodByName(Ucfirst(name))
+			for i := 0; i < entries.Len(); i++ {
+				entry := entries.Index(i)
+				method.Call([]reflect.Value{entry, reflect.ValueOf(payload)})
+			}
 		}
 	}
 
