@@ -237,7 +237,11 @@ var (
 		11: "data",
 	}
 
-	W2J_OP_IMMEDIATES = ReadWasmFromFile("immediates.json")
+	W2J_OP_IMMEDIATES = ReadImmediates()
+
+	immeParsers = reflect.ValueOf(immediataryParsers{})
+	tParsers    = reflect.ValueOf(typeParsers{})
+	secParsers  = reflect.ValueOf(sectionParsers{})
 )
 
 type immediataryParsers struct{}
@@ -395,7 +399,6 @@ func (s sectionParsers) Import(stream *Stream) ImportSec {
 		Name: "import",
 	}
 
-	rParser := reflect.ValueOf(typeParsers{})
 	for i := uint64(0); i < numberOfEntries; i++ {
 		moduleLen := DecodeULEB128(stream)
 		moduleStr := stream.Read(int(moduleLen))
@@ -405,7 +408,7 @@ func (s sectionParsers) Import(stream *Stream) ImportSec {
 
 		kind := stream.ReadByte()
 		externalKind := W2J_EXTERNAL_KIND[kind]
-		returned := rParser.MethodByName(Ucfirst(externalKind)).Call([]reflect.Value{reflect.ValueOf(stream)})
+		returned := tParsers.MethodByName(Ucfirst(externalKind)).Call([]reflect.Value{reflect.ValueOf(stream)})
 
 		entry := ImportEntry{
 			ModuleStr: string(moduleStr),
@@ -591,17 +594,17 @@ func (sectionParsers) Data(stream *Stream) DataSec {
 	return dataSec
 }
 
+// Wasm2Json convert the wasm binary to a JSON array output.
 func Wasm2Json(buf []byte) []JSON {
 	stream := NewStream(buf)
 	preramble := ParsePreramble(stream)
 	resJson := []JSON{preramble}
 
-	rSecParsers := reflect.ValueOf(sectionParsers{})
 	for stream.Len() != 0 {
 		header := ParseSectionHeader(stream)
 		//fmt.Printf("%#v\n", header)
 		name := header.Name
-		parser := rSecParsers.MethodByName(Ucfirst(name))
+		parser := secParsers.MethodByName(Ucfirst(name))
 		in := []reflect.Value{reflect.ValueOf(stream)}
 		if parser.Type().NumIn() == 2 {
 			in = append(in, reflect.ValueOf(header))
@@ -668,8 +671,7 @@ func ParseOp(stream *Stream) OP {
 	}
 	immediates := W2J_OP_IMMEDIATES[immediatesKey]
 	if immediates != nil {
-		rv := reflect.ValueOf(immediataryParsers{})
-		returned := rv.MethodByName(Ucfirst(immediates.(string))).Call([]reflect.Value{reflect.ValueOf(stream)})
+		returned := immeParsers.MethodByName(Ucfirst(immediates.(string))).Call([]reflect.Value{reflect.ValueOf(stream)})
 		finalOP.Immediates = returned[0].Interface()
 	}
 

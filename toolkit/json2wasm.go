@@ -212,7 +212,11 @@ var (
 		"f64.reinterpret/i64": 0xbf,
 	}
 
-	J2W_OP_IMMEDIATES = ReadWasmFromFile("immediates.json")
+	J2W_OP_IMMEDIATES = ReadImmediates()
+
+	typeGen  = reflect.ValueOf(typeGenerators{})
+	immeGen  = reflect.ValueOf(immediataryGenerators{})
+	entryGen = reflect.ValueOf(entryGenerators{})
 )
 
 type typeGenerators struct{}
@@ -355,7 +359,6 @@ func (entryGenerators) Import(entry ImportEntry, stream *Stream) {
 
 	stream.Write([]byte{J2W_EXTERNAL_KIND[entry.Kind]})
 
-	typeGen := reflect.ValueOf(typeGenerators{})
 	typeGen.MethodByName(Ucfirst(entry.Kind)).Call([]reflect.Value{reflect.ValueOf(entry.Type), reflect.ValueOf(stream)})
 }
 
@@ -424,15 +427,14 @@ func (entryGenerators) Data(entry DataSegment, stream *Stream) *Stream {
 	return stream
 }
 
+// Json2Wasm converts a JSON array to wasm binary.
 func Json2Wasm(j []JSON) []byte {
 	stream := NewStream(nil)
 	preamble := j[0]
 	GeneratePreramble(preamble, stream)
-	if len(j) > 1 {
-		rest := j[1:]
-		for _, item := range rest {
-			GenerateSection(item, stream)
-		}
+	rest := j[1:]
+	for _, item := range rest {
+		GenerateSection(item, stream)
 	}
 
 	return stream.Bytes()
@@ -467,8 +469,7 @@ func GenerateOP(op OP, stream *Stream) *Stream {
 	}
 	immediates, exist := J2W_OP_IMMEDIATES[immediateKey]
 	if exist {
-		immGen := reflect.ValueOf(immediataryGenerators{})
-		immGen.MethodByName(Ucfirst(immediates.(string))).Call([]reflect.Value{
+		immeGen.MethodByName(Ucfirst(immediates.(string))).Call([]reflect.Value{
 			reflect.ValueOf(op.Immediates),
 			reflect.ValueOf(stream),
 		})
@@ -493,7 +494,6 @@ func GenerateSection(j JSON, stream *Stream) *Stream {
 	} else if name == "start" {
 		EncodeULEB128(uint64(j["Index"].(uint32)), payload)
 	} else {
-		entryGen := reflect.ValueOf(entryGenerators{})
 		entries := reflect.ValueOf(j["Entries"])
 		EncodeULEB128(uint64(entries.Len()), payload)
 		//fmt.Printf("Gen %v\n", name)

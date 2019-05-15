@@ -146,7 +146,7 @@ func DecodeSLEB128(stream *Stream) (s int64) {
 	return
 }
 
-func ReadWasmFromFile(path string) JSON {
+func ReadFromFile(path string) JSON {
 	obj := make(JSON)
 	file, err := os.Open(path)
 	if err != nil {
@@ -158,6 +158,10 @@ func ReadWasmFromFile(path string) JSON {
 		panic(err)
 	}
 	return obj
+}
+
+func ReadImmediates() JSON {
+	return ReadFromFile("immediates.json")
 }
 
 func Ucfirst(str string) string {

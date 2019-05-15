@@ -72,3 +72,75 @@ func TestBasicTest(t *testing.T) {
 
 	fmt.Printf("total failed case %d\n", failed)
 }
+
+func TestText2Json(t *testing.T) {
+	text := "i32.const 32 drop"
+	json := Text2Json(text)
+
+	expected := []JSON{
+		{
+			"Name":       "const",
+			"ReturnType": "i32",
+			"Immediates": "32",
+		}, {
+			"Name": "drop",
+		},
+	}
+
+	assert.Equal(t, true, assert.ObjectsAreEqual(expected, json))
+
+	text = "br_table 0 0 0 0 i64.const 24"
+	json = Text2Json(text)
+
+	expected = []JSON{
+		{
+			"Name":       "br_table",
+			"Immediates": []string{"0", "0", "0", "0"},
+		}, {
+			"ReturnType": "i64",
+			"Name":       "const",
+			"Immediates": "24",
+		},
+	}
+
+	assert.Equal(t, true, assert.ObjectsAreEqual(expected, json))
+
+	text = "call_indirect 1 i64.const 24"
+	json = Text2Json(text)
+
+	expected = []JSON{
+		{
+			"Name": "call_indirect",
+			"Immediates": JSON{
+				"Index":    "1",
+				"Reserved": 0,
+			},
+		}, {
+			"ReturnType": "i64",
+			"Name":       "const",
+			"Immediates": "24",
+		},
+	}
+
+	assert.Equal(t, true, assert.ObjectsAreEqual(expected, json))
+
+	text = "i32.load 0 1 i64.const 24"
+	json = Text2Json(text)
+
+	expected = []JSON{
+		{
+			"Name":       "load",
+			"ReturnType": "i32",
+			"Immediates": JSON{
+				"Flags":  "0",
+				"Offset": "1",
+			},
+		}, {
+			"ReturnType": "i64",
+			"Name":       "const",
+			"Immediates": "24",
+		},
+	}
+
+	assert.Equal(t, true, assert.ObjectsAreEqual(expected, json))
+}
