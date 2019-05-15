@@ -284,22 +284,22 @@ func (immediataryParsers) Br_table(stream *Stream) JSON {
 		targets = append(targets, target)
 	}
 
-	jsonObj["Targets"] = targets
-	jsonObj["DefaultTarget"] = DecodeULEB128(stream)
+	jsonObj["targets"] = targets
+	jsonObj["defaultTarget"] = DecodeULEB128(stream)
 	return jsonObj
 }
 
 func (immediataryParsers) Call_indirect(stream *Stream) JSON {
 	jsonObj := make(JSON)
-	jsonObj["Index"] = DecodeULEB128(stream)
-	jsonObj["Reserved"] = stream.ReadByte()
+	jsonObj["index"] = DecodeULEB128(stream)
+	jsonObj["reserved"] = stream.ReadByte()
 	return jsonObj
 }
 
 func (immediataryParsers) Memory_immediate(stream *Stream) JSON {
 	jsonObj := make(JSON)
-	jsonObj["Flags"] = DecodeULEB128(stream)
-	jsonObj["Offset"] = DecodeULEB128(stream)
+	jsonObj["flags"] = DecodeULEB128(stream)
+	jsonObj["offset"] = DecodeULEB128(stream)
 	return jsonObj
 }
 
@@ -615,7 +615,7 @@ func Wasm2Json(buf []byte) []JSON {
 		jsonObj := make(JSON)
 		rtSec := rsec.Type()
 		for i := 0; i < rsec.NumField(); i++ {
-			jsonObj[rtSec.Field(i).Name] = rsec.Field(i).Interface()
+			jsonObj[Lcfirst(rtSec.Field(i).Name)] = rsec.Field(i).Interface()
 			//fmt.Printf("%v %v\n",rtSec.Field(i).Name,rsec.Field(i).Interface())
 		}
 		resJson = append(resJson, jsonObj)
@@ -629,9 +629,9 @@ func ParsePreramble(stream *Stream) JSON {
 	version := stream.Read(4)
 
 	jsonObj := make(JSON)
-	jsonObj["Name"] = "preramble"
-	jsonObj["Magic"] = magic
-	jsonObj["Version"] = version
+	jsonObj["name"] = "preramble"
+	jsonObj["magic"] = magic
+	jsonObj["version"] = version
 
 	return jsonObj
 }

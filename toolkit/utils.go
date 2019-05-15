@@ -171,3 +171,25 @@ func Ucfirst(str string) string {
 		return str
 	}
 }
+
+func Lcfirst(str string) string {
+	if z := rune(str[0]); unicode.IsUpper(z) {
+		return string(unicode.ToLower(z)) + str[1:]
+	} else {
+		return str
+	}
+}
+
+func Interface2Bytes(arr interface{}) (out []byte) {
+	switch v := arr.(type) {
+	case []interface{}:
+		for _, b := range v {
+			out = append(out, byte(b.(float64)))
+		}
+	case []byte:
+		out = v
+	case string:
+		out = []byte(v)
+	}
+	return
+}

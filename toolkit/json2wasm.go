@@ -295,27 +295,27 @@ func (immediataryGenerators) Block_type(j string, stream *Stream) *Stream {
 }
 
 func (immediataryGenerators) Br_table(j JSON, stream *Stream) *Stream {
-	targets := j["Targets"].([]uint64)
+	targets := j["targets"].([]uint64)
 	EncodeULEB128(uint64(len(targets)), stream)
 
 	for _, target := range targets {
 		EncodeULEB128(target, stream)
 	}
-	EncodeULEB128(j["DefaultTarget"].(uint64), stream)
+	EncodeULEB128(j["defaultTarget"].(uint64), stream)
 	return stream
 }
 
 func (immediataryGenerators) Call_indirect(j JSON, stream *Stream) *Stream {
-	index := j["Index"]
-	reserved := j["Reserved"].(byte)
+	index := j["index"]
+	reserved := j["reserved"].(byte)
 	EncodeULEB128(index.(uint64), stream)
 	stream.Write([]byte{reserved})
 	return stream
 }
 
 func (immediataryGenerators) Memory_immediate(j JSON, stream *Stream) *Stream {
-	EncodeULEB128(j["Flags"].(uint64), stream)
-	EncodeULEB128(j["Offset"].(uint64), stream)
+	EncodeULEB128(j["flags"].(uint64), stream)
+	EncodeULEB128(j["offset"].(uint64), stream)
 	return stream
 }
 
@@ -445,15 +445,9 @@ func GeneratePreramble(j JSON, stream *Stream) *Stream {
 		stream = NewStream(nil)
 	}
 
-	magic, exist := j["Magic"]
-	if exist {
-		stream.Write(magic.([]byte))
-	}
+	stream.Write(Interface2Bytes(j["magic"]))
 
-	version, exist := j["Version"]
-	if exist {
-		stream.Write(version.([]byte))
-	}
+	stream.Write(Interface2Bytes(j["version"]))
 
 	return stream
 }
@@ -490,7 +484,7 @@ func GenerateSection(j JSON, stream *Stream) *Stream {
 	}
 
 	var name string
-	nameinterf, exist := j["Name"]
+	nameinterf, exist := j["name"]
 	if exist {
 		name = nameinterf.(string)
 	}
@@ -498,14 +492,14 @@ func GenerateSection(j JSON, stream *Stream) *Stream {
 	stream.Write([]byte{J2W_SECTION_IDS[name]})
 
 	if name == "custom" {
-		sectionName := j["SectionName"].(string)
+		sectionName := j["sectionName"].(string)
 		EncodeULEB128(uint64(len(sectionName)), payload)
 		payload.Write([]byte(sectionName))
-		payload.Write([]byte(j["Payload"].(string)))
+		payload.Write([]byte(j["payload"].(string)))
 	} else if name == "start" {
-		EncodeULEB128(uint64(j["Index"].(uint32)), payload)
+		EncodeULEB128(uint64(j["index"].(uint32)), payload)
 	} else {
-		entries, exist := j["Entries"]
+		entries, exist := j["entries"]
 		if exist {
 			entries := reflect.ValueOf(entries)
 			EncodeULEB128(uint64(entries.Len()), payload)
