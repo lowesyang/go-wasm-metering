@@ -84,24 +84,24 @@ func TestBasicTest(t *testing.T) {
 
 	fmt.Printf("total failed case %d\n", failed)
 
-	dirName = path.Join("test", "json")
-	dir, err = ioutil.ReadDir(dirName)
-	assert.Nil(t, err)
-	for _, fi := range dir {
-		if fi.IsDir() {
-			continue
-		}
-
-		jsonObj, err := readWasmModule(path.Join(dirName, fi.Name()))
-		assert.Nil(t, err)
-		fmt.Printf("%#v\n", jsonObj)
-
-		wasm := Json2Wasm(jsonObj)
-		jsonObj2 := Wasm2Json(wasm)
-		fmt.Printf("%#v\n", jsonObj2)
-
-		assert.Equal(t, true, assert.ObjectsAreEqual(jsonObj, jsonObj2))
-	}
+	//dirName = path.Join("test", "json")
+	//dir, err = ioutil.ReadDir(dirName)
+	//assert.Nil(t, err)
+	//for _, fi := range dir {
+	//	if fi.IsDir() {
+	//		continue
+	//	}
+	//
+	//	jsonObj, err := readWasmModule(path.Join(dirName, fi.Name()))
+	//	assert.Nil(t, err)
+	//	fmt.Printf("%#v\n", jsonObj)
+	//
+	//	wasm := Json2Wasm(jsonObj)
+	//	jsonObj2 := Wasm2Json(wasm)
+	//	fmt.Printf("%#v\n", jsonObj2)
+	//
+	//	assert.Equal(t, true, assert.ObjectsAreEqual(jsonObj, jsonObj2))
+	//}
 
 }
 

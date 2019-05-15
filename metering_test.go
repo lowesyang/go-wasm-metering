@@ -47,21 +47,19 @@ func readWasmModule(path string) ([]toolkit.JSON, error) {
 }
 
 func TestBasic(t *testing.T) {
-	module, err := readWasmModule(path.Join("test", "in", "json", "basic.wast.json"))
+	wasm, err := ioutil.ReadFile(path.Join("test", "in", "wasm", "basic.wasm"))
 	assert.Nil(t, err)
-	wasm := toolkit.Json2Wasm(module)
-	fmt.Printf("%#v\n", toolkit.Wasm2Json(wasm))
 
 	meteredWasm, err := MeterWASM(wasm, nil)
 	assert.Nil(t, err)
 	meteredJson := toolkit.Wasm2Json(meteredWasm)
 
 	fmt.Printf("%#v\n", meteredJson)
-	entries1 := meteredJson[1]["Entries"].([]interface{})
-	entries2 := meteredJson[2]["Entries"].([]interface{})
-	assert.Equal(t, "metering", entries2[0].(toolkit.JSON)["ModuleStr"].(string))
-	assert.Equal(t, "usegas", entries2[0].(toolkit.JSON)["FieldStr"].(string))
-	assert.Equal(t, "i32", entries1[1].(toolkit.JSON)["Params"].([]interface{})[0].(string))
+	//entries1 := meteredJson[1]["entries"].([]toolkit.TypeEntry)
+	//entries2 := meteredJson[2]["entries"].([]toolkit.TypeEntry)
+	//assert.Equal(t, "metering", entries2[0]["module_str"])
+	//assert.Equal(t, "usegas", entries2[0]["field_str"].(string))
+	//assert.Equal(t, "i32", entries1[1]["params"].([]interface{})[0].(string))
 }
 
 func TestBasicMeteringTests(t *testing.T) {
