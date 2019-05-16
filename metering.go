@@ -144,7 +144,6 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 		ModuleStr: m.opts.ModuleStr,
 		FieldStr:  m.opts.FieldStr,
 		Kind:      "function",
-		Type:      uint64(0),
 	}
 
 	importType := toolkit.TypeEntry{
@@ -174,6 +173,7 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 			if exist {
 				entries = ientries.([]toolkit.TypeEntry)
 			}
+			//fmt.Printf("Entries %#v\n", entries)
 			entries = append(entries, importType)
 			section["entries"] = entries
 			importEntry.Type = uint64(len(entries) - 1)
@@ -197,15 +197,13 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 					funcIndex += 1
 				}
 			}
-			entries = append(entries, importEntry)
 			// append the metering import.
-			section["entries"] = entries
+			section["entries"] = append(entries, importEntry)
 		case "export":
 			entries := section["entries"].([]toolkit.ExportEntry)
 			for i, entry := range entries {
 				if entry.Kind == "function" && entry.Index >= uint32(funcIndex) {
 					entries[i].Index = entry.Index + 1
-					// FIXME: maybe has bug? value pass or pointer pass.
 				}
 			}
 		case "element":
@@ -273,6 +271,7 @@ func getCost(j interface{}, costTable toolkit.JSON, defaultCost uint64) (cost ui
 	} else {
 		cost = defaultCost
 	}
+	//fmt.Printf("json %#v cost %v\n", j, cost)
 	return
 }
 

@@ -1,6 +1,7 @@
 package toolkit
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 )
@@ -608,6 +609,10 @@ func Wasm2Json(buf []byte) []JSON {
 			in = append(in, reflect.ValueOf(header))
 		}
 		rsec := parser.Call(in)[0]
+
+		if name == "type" {
+			fmt.Printf("entries %+v\n", rsec)
+		}
 
 		// convert to JSON
 		jsonObj := make(JSON)

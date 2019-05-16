@@ -111,29 +111,9 @@ func TestBasicMeteringTests(t *testing.T) {
 		//fmt.Printf("%s exp %#v\n", file.Name(), expectedJson)
 
 		if !assert.Equal(t, true, assert.ObjectsAreEqual(meteredModule, expectedJson)) {
-			fmt.Printf("%#v\n%#v\n", meteredModule, expectedJson)
+			fmt.Printf("%+v\n%+v\n", meteredModule, expectedJson)
 		}
 	}
 
 	//fmt.Printf("Basic metering tests failed cases %d", failed)
-}
-
-func TestWasm(t *testing.T) {
-	module, err := readWasmModule(path.Join("test", "in", "json", "basic.wast.json"))
-	assert.Nil(t, err)
-
-	wasm := toolkit.Json2Wasm(module)
-	meteredWasm, err := MeterWASM(wasm, &Options{
-		MeterType: "i32",
-		FieldStr:  "test",
-		ModuleStr: "test",
-	})
-	assert.Nil(t, err)
-
-	meteredJson := toolkit.Wasm2Json(meteredWasm)
-	entries1 := meteredJson[1]["Entries"].([]interface{})
-	entries2 := meteredJson[2]["Entries"].([]interface{})
-	assert.Equal(t, "test", entries2[0].(toolkit.JSON)["ModuleStr"].(string))
-	assert.Equal(t, "test", entries2[0].(toolkit.JSON)["FieldStr"].(string))
-	assert.Equal(t, "i32", entries1[1].(toolkit.JSON)["Params"].([]interface{})[0].(string))
 }
