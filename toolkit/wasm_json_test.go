@@ -12,14 +12,14 @@ import (
 
 var expectedJson = []JSON{
 	{
-		"Name":    "preramble",
-		"Magic":   []byte{0, 97, 115, 109},
-		"Version": []byte{1, 0, 0, 0},
+		"name":    "preramble",
+		"magic":   []byte{0, 97, 115, 109},
+		"version": []byte{1, 0, 0, 0},
 	},
 	{
-		"Name":        "custom",
-		"SectionName": "a custom section",
-		"Payload":     "this is the payload",
+		"name":        "custom",
+		"section_name": "a custom section",
+		"payload":     "this is the payload",
 	},
 }
 
@@ -111,11 +111,11 @@ func TestText2Json(t *testing.T) {
 
 	expected := []JSON{
 		{
-			"Name":       "const",
-			"ReturnType": "i32",
-			"Immediates": "32",
+			"name":        "const",
+			"return_type": "i32",
+			"immediates":  "32",
 		}, {
-			"Name": "drop",
+			"name": "drop",
 		},
 	}
 
@@ -126,12 +126,12 @@ func TestText2Json(t *testing.T) {
 
 	expected = []JSON{
 		{
-			"Name":       "br_table",
-			"Immediates": []string{"0", "0", "0", "0"},
+			"name":       "br_table",
+			"immediates": []string{"0", "0", "0", "0"},
 		}, {
-			"ReturnType": "i64",
-			"Name":       "const",
-			"Immediates": "24",
+			"return_type": "i64",
+			"name":       "const",
+			"immediates": "24",
 		},
 	}
 
@@ -142,15 +142,15 @@ func TestText2Json(t *testing.T) {
 
 	expected = []JSON{
 		{
-			"Name": "call_indirect",
-			"Immediates": JSON{
-				"Index":    "1",
-				"Reserved": 0,
+			"name": "call_indirect",
+			"immediates": JSON{
+				"index":    "1",
+				"reserved": 0,
 			},
 		}, {
-			"ReturnType": "i64",
-			"Name":       "const",
-			"Immediates": "24",
+			"return_type": "i64",
+			"name":        "const",
+			"immediates":  "24",
 		},
 	}
 
@@ -161,16 +161,16 @@ func TestText2Json(t *testing.T) {
 
 	expected = []JSON{
 		{
-			"Name":       "load",
-			"ReturnType": "i32",
-			"Immediates": JSON{
-				"Flags":  "0",
-				"Offset": "1",
+			"name":       "load",
+			"return_type": "i32",
+			"immediates": JSON{
+				"flags":  "0",
+				"offset": "1",
 			},
 		}, {
-			"ReturnType": "i64",
-			"Name":       "const",
-			"Immediates": "24",
+			"return_type": "i64",
+			"name":       "const",
+			"immediates": "24",
 		},
 	}
 

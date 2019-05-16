@@ -212,8 +212,6 @@ var (
 		"f64.reinterpret/i64": 0xbf,
 	}
 
-	J2W_OP_IMMEDIATES = ReadImmediates()
-
 	typeGen  = reflect.ValueOf(typeGenerators{})
 	immeGen  = reflect.ValueOf(immediataryGenerators{})
 	entryGen = reflect.ValueOf(entryGenerators{})
@@ -289,23 +287,23 @@ func (immediataryGenerators) Uint64(j []byte, stream *Stream) *Stream {
 	return stream
 }
 
-func (immediataryGenerators) Block_type(j string, stream *Stream) *Stream {
+func (immediataryGenerators) BlockType(j string, stream *Stream) *Stream {
 	stream.Write([]byte{J2W_LANGUAGE_TYPES[j]})
 	return stream
 }
 
-func (immediataryGenerators) Br_table(j JSON, stream *Stream) *Stream {
+func (immediataryGenerators) BrTable(j JSON, stream *Stream) *Stream {
 	targets := j["targets"].([]uint64)
 	EncodeULEB128(uint64(len(targets)), stream)
 
 	for _, target := range targets {
 		EncodeULEB128(target, stream)
 	}
-	EncodeULEB128(j["defaultTarget"].(uint64), stream)
+	EncodeULEB128(j["default_target"].(uint64), stream)
 	return stream
 }
 
-func (immediataryGenerators) Call_indirect(j JSON, stream *Stream) *Stream {
+func (immediataryGenerators) CallIndirect(j JSON, stream *Stream) *Stream {
 	index := j["index"]
 	reserved := j["reserved"].(byte)
 	EncodeULEB128(index.(uint64), stream)
@@ -313,7 +311,7 @@ func (immediataryGenerators) Call_indirect(j JSON, stream *Stream) *Stream {
 	return stream
 }
 
-func (immediataryGenerators) Memory_immediate(j JSON, stream *Stream) *Stream {
+func (immediataryGenerators) MemoryImmediate(j JSON, stream *Stream) *Stream {
 	EncodeULEB128(j["flags"].(uint64), stream)
 	EncodeULEB128(j["offset"].(uint64), stream)
 	return stream
@@ -468,9 +466,10 @@ func GenerateOP(op OP, stream *Stream) *Stream {
 	if immediateKey == "const" {
 		immediateKey = op.ReturnType
 	}
-	immediates, exist := J2W_OP_IMMEDIATES[immediateKey]
+	immediates, exist := OP_IMMEDIATES[immediateKey]
 	if exist {
-		immeGen.MethodByName(Ucfirst(immediates.(string))).Call([]reflect.Value{
+		//fmt.Printf("imm %s %v\n", immediates, op.Immediates)
+		immeGen.MethodByName(Ucfirst(immediates)).Call([]reflect.Value{
 			reflect.ValueOf(op.Immediates),
 			reflect.ValueOf(stream),
 		})
@@ -492,7 +491,7 @@ func GenerateSection(j JSON, stream *Stream) *Stream {
 	stream.Write([]byte{J2W_SECTION_IDS[name]})
 
 	if name == "custom" {
-		sectionName := j["sectionName"].(string)
+		sectionName := j["section_name"].(string)
 		EncodeULEB128(uint64(len(sectionName)), payload)
 		payload.Write([]byte(sectionName))
 		payload.Write([]byte(j["payload"].(string)))

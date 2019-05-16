@@ -160,24 +160,51 @@ func ReadFromFile(path string) JSON {
 	return obj
 }
 
-func ReadImmediates() JSON {
-	return ReadFromFile("immediates.json")
-}
-
-func Ucfirst(str string) string {
-	if z := rune(str[0]); unicode.IsLower(z) {
-		return string(unicode.ToUpper(z)) + str[1:]
-	} else {
-		return str
-	}
-}
-
+// Camel-Case to underline
 func Lcfirst(str string) string {
-	if z := rune(str[0]); unicode.IsUpper(z) {
-		return string(unicode.ToLower(z)) + str[1:]
-	} else {
-		return str
+	//if z := rune(str[0]); unicode.IsLower(z) {
+	//	return string(unicode.ToUpper(z)) + str[1:]
+	//} else {
+	//	return str
+	//}
+	var newStr string
+	for i, b := range str {
+		if unicode.IsUpper(b) {
+			cm := string(unicode.ToLower(b))
+			if i != 0 {
+				cm = "_" + cm
+			}
+			newStr += cm
+		} else {
+			newStr += string(b)
+		}
 	}
+	return newStr
+}
+
+// underline to Camel-Case
+func Ucfirst(str string) string {
+	//if z := rune(str[0]); unicode.IsUpper(z) {
+	//	return string(unicode.ToLower(z)) + str[1:]
+	//} else {
+	//	return str
+	//}
+	var newStr string
+	for i := 0; i < len(str); i++ {
+		b := str[i]
+		if unicode.IsLower(rune(b)) && i == 0 {
+			newStr += string(unicode.ToUpper(rune(b)))
+		} else if b == '_' {
+			n := str[i+1]
+			if unicode.IsLower(rune(n)) {
+				newStr += string(unicode.ToUpper(rune(n)))
+				i += 1
+			}
+		} else {
+			newStr += string(b)
+		}
+	}
+	return newStr
 }
 
 func Interface2Bytes(arr interface{}) (out []byte) {

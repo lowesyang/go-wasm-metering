@@ -6,8 +6,6 @@ import (
 	"unicode"
 )
 
-var immediates = ReadImmediates()
-
 type queue struct {
 	i   int
 	str []string
@@ -45,19 +43,18 @@ func Text2Json(text string) (res []JSON) {
 		name := typ
 		if len(opArr) > 1 {
 			name = opArr[1]
-			jsonOp["ReturnType"] = typ
+			jsonOp["return_type"] = typ
 		}
 
-		jsonOp["Name"] = name
+		jsonOp["name"] = name
 
 		key := name
 		if name == "const" {
-			key = jsonOp["ReturnType"].(string)
+			key = jsonOp["return_type"].(string)
 		}
-		immediate, exist := immediates[key]
-
+		immediate, exist := OP_IMMEDIATES[key]
 		if exist {
-			jsonOp["Immediates"] = immediataryParser(immediate.(string), textArr)
+			jsonOp["immediates"] = immediataryParser(immediate, textArr)
 		}
 
 		res = append(res, jsonOp)
@@ -82,12 +79,12 @@ func immediataryParser(typ string, txt *queue) interface{} {
 		return dests
 
 	case "call_indirect":
-		json["Index"] = txt.shift()
-		json["Reserved"] = 0
+		json["index"] = txt.shift()
+		json["reserved"] = 0
 		return json
 	case "memory_immediate":
-		json["Flags"] = txt.shift()
-		json["Offset"] = txt.shift()
+		json["flags"] = txt.shift()
+		json["offset"] = txt.shift()
 		return json
 	default:
 		return txt.shift()

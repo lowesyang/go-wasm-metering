@@ -237,8 +237,6 @@ var (
 		11: "data",
 	}
 
-	W2J_OP_IMMEDIATES = ReadImmediates()
-
 	immeParsers = reflect.ValueOf(immediataryParsers{})
 	tParsers    = reflect.ValueOf(typeParsers{})
 	secParsers  = reflect.ValueOf(sectionParsers{})
@@ -270,11 +268,11 @@ func (immediataryParsers) Uint64(stream *Stream) []byte {
 	return stream.Read(8)
 }
 
-func (immediataryParsers) Block_type(stream *Stream) string {
+func (immediataryParsers) BlockType(stream *Stream) string {
 	return W2J_LANGUAGE_TYPES[stream.ReadByte()]
 }
 
-func (immediataryParsers) Br_table(stream *Stream) JSON {
+func (immediataryParsers) BrTable(stream *Stream) JSON {
 	jsonObj := make(JSON)
 	targets := []uint64{}
 
@@ -285,18 +283,18 @@ func (immediataryParsers) Br_table(stream *Stream) JSON {
 	}
 
 	jsonObj["targets"] = targets
-	jsonObj["defaultTarget"] = DecodeULEB128(stream)
+	jsonObj["default_target"] = DecodeULEB128(stream)
 	return jsonObj
 }
 
-func (immediataryParsers) Call_indirect(stream *Stream) JSON {
+func (immediataryParsers) CallIndirect(stream *Stream) JSON {
 	jsonObj := make(JSON)
 	jsonObj["index"] = DecodeULEB128(stream)
 	jsonObj["reserved"] = stream.ReadByte()
 	return jsonObj
 }
 
-func (immediataryParsers) Memory_immediate(stream *Stream) JSON {
+func (immediataryParsers) MemoryImmediate(stream *Stream) JSON {
 	jsonObj := make(JSON)
 	jsonObj["flags"] = DecodeULEB128(stream)
 	jsonObj["offset"] = DecodeULEB128(stream)
@@ -669,9 +667,9 @@ func ParseOp(stream *Stream) OP {
 	} else {
 		immediatesKey = name
 	}
-	immediates := W2J_OP_IMMEDIATES[immediatesKey]
-	if immediates != nil {
-		returned := immeParsers.MethodByName(Ucfirst(immediates.(string))).Call([]reflect.Value{reflect.ValueOf(stream)})
+	immediates, exist := OP_IMMEDIATES[immediatesKey]
+	if exist {
+		returned := immeParsers.MethodByName(Ucfirst(immediates)).Call([]reflect.Value{reflect.ValueOf(stream)})
 		finalOP.Immediates = returned[0].Interface()
 	}
 

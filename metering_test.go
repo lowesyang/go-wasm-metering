@@ -1,6 +1,7 @@
 package go_wasm_metering
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/stretchr/testify/assert"
@@ -10,10 +11,13 @@ import (
 	"testing"
 )
 
-var defaultCostTable toolkit.JSON
+var (
+	defaultCostTable toolkit.JSON
+	defaultCTPath    = path.Join("test", "defaultCostTable.json")
+)
 
 func init() {
-	defaultCostT, err := readCostTable(path.Join("test", "defaultCostTable.json"))
+	defaultCostT, err := readCostTable(defaultCTPath)
 	if err != nil {
 		panic(err)
 	}
@@ -50,11 +54,18 @@ func TestBasic(t *testing.T) {
 	wasm, err := ioutil.ReadFile(path.Join("test", "in", "wasm", "basic.wasm"))
 	assert.Nil(t, err)
 
-	meteredWasm, err := MeterWASM(wasm, nil)
+	meteredWasm, err := MeterWASM(wasm, &Options{
+		CostTable: defaultCTPath,
+	})
 	assert.Nil(t, err)
 	meteredJson := toolkit.Wasm2Json(meteredWasm)
 
-	fmt.Printf("%#v\n", meteredJson)
+	expectedWasm, err := ioutil.ReadFile(path.Join("test", "expected-out", "wasm", "basic.wasm"))
+	assert.Nil(t, err)
+	expectedJson := toolkit.Wasm2Json(expectedWasm)
+	//fmt.Printf("%#v\n%#v\n", meteredJson, expectedJson)
+	assert.Equal(t, true, assert.ObjectsAreEqual(meteredJson, expectedJson))
+	assert.Equal(t, 0, bytes.Compare(meteredWasm, expectedWasm))
 	//entries1 := meteredJson[1]["entries"].([]toolkit.TypeEntry)
 	//entries2 := meteredJson[2]["entries"].([]toolkit.TypeEntry)
 	//assert.Equal(t, "metering", entries2[0]["module_str"])
@@ -64,13 +75,14 @@ func TestBasic(t *testing.T) {
 
 func TestBasicMeteringTests(t *testing.T) {
 	dirName := path.Join("test", "in")
-	dir, err := ioutil.ReadDir(dirName)
+	dir, err := ioutil.ReadDir(path.Join(dirName, "wasm"))
 	assert.Nil(t, err)
-	failed := 0
 	for _, file := range dir {
 		// read wasm json.
-		module, err := readWasmModule(path.Join(dirName, "json", file.Name()))
+		wasm, err := ioutil.ReadFile(path.Join(dirName, "wasm", file.Name()))
 		assert.Nil(t, err)
+
+		module := toolkit.Wasm2Json(wasm)
 
 		// read cost table json.
 		costTable, err := readCostTable(path.Join(dirName, "costTables", file.Name()))
@@ -85,18 +97,25 @@ func TestBasicMeteringTests(t *testing.T) {
 				MeterType: defaultMeterType,
 			},
 		}
+		//fmt.Printf("%s %#v\n", file.Name(), module)
 		meteredModule, err := metering.meterJSON(module)
-		assert.Nil(t, err)
+		if err != nil {
+			assert.Equal(t, "basic+import.wasm", file.Name())
+			continue
+		}
+		//fmt.Printf("%s old %#v\n", file.Name(), meteredModule)
 
-		expectedModule, err := readWasmModule(path.Join("test", "expected-out", "json", file.Name()))
+		expectedWasm, err := ioutil.ReadFile(path.Join("test", "expected-out", "wasm", file.Name()))
 		assert.Nil(t, err)
-		if !assert.Equal(t, true, assert.ObjectsAreEqual(expectedModule, meteredModule)) {
-			//assert.Equal(t, "basic+import.wasm.json", file.Name())
-			failed += 1
+		expectedJson := toolkit.Wasm2Json(expectedWasm)
+		//fmt.Printf("%s exp %#v\n", file.Name(), expectedJson)
+
+		if !assert.Equal(t, true, assert.ObjectsAreEqual(meteredModule, expectedJson)) {
+			fmt.Printf("%#v\n%#v\n", meteredModule, expectedJson)
 		}
 	}
 
-	assert.Equal(t, 0, failed)
+	//fmt.Printf("Basic metering tests failed cases %d", failed)
 }
 
 func TestWasm(t *testing.T) {

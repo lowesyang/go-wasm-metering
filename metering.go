@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/yyh1102/go-wasm-metering/toolkit"
 	"io/ioutil"
+	"reflect"
 	"strconv"
 )
 
@@ -12,8 +13,8 @@ const (
 	defaultCostTablePath = "defaultCostTable.json"
 	defaultModuleStr     = "metering"
 	defaultFieldStr      = "usegas"
-	defaultMeterType     = "i32"
-	defaultCost          = 0
+	defaultMeterType     = "i64"
+	defaultCost          = uint64(0)
 )
 
 var (
@@ -99,7 +100,7 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 	// find section.
 	findSection := func(module []toolkit.JSON, sectionName string) toolkit.JSON {
 		for _, section := range module {
-			if name, exist := section["Name"]; exist {
+			if name, exist := section["name"]; exist {
 				if name.(string) == sectionName {
 					return section
 				}
@@ -112,17 +113,15 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 	createSection := func(module []toolkit.JSON, sectionName string) []toolkit.JSON {
 		newSectionId := toolkit.J2W_SECTION_IDS[sectionName]
 		for i, section := range module {
-			name, exist := section["Name"]
+			name, exist := section["name"]
 			if exist {
 				secId, exist := toolkit.J2W_SECTION_IDS[name.(string)]
-				fmt.Printf("%v %v %v\n", name, secId, exist)
+				//fmt.Printf("%v %v %v\n", name, secId, exist)
 				if exist && secId > 0 && newSectionId < secId {
-					fmt.Println("inject section")
-					rest := append([]toolkit.JSON{}, module[i+1:]...)
+					rest := append([]toolkit.JSON{}, module[i:]...)
 					// insert the section at pos `i`
 					module = append(module[:i], toolkit.JSON{
-						"Name":    sectionName,
-						"Entries": []interface{}{},
+						"name": sectionName,
 					})
 					module = append(module, rest...)
 					break
@@ -131,6 +130,7 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 		}
 		return module
 	}
+	//fmt.Printf("%#v\n", module)
 
 	// add necessary `type` and `import` sections if and only if they don't exist.
 	if findSection(module, "type") == nil {
@@ -140,15 +140,16 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 		module = createSection(module, "import")
 	}
 
-	importEntry := toolkit.JSON{
-		"ModuleStr": m.opts.ModuleStr,
-		"FieldStr":  m.opts.FieldStr,
-		"Kind":      "function",
+	importEntry := toolkit.ImportEntry{
+		ModuleStr: m.opts.ModuleStr,
+		FieldStr:  m.opts.FieldStr,
+		Kind:      "function",
+		Type:      uint64(0),
 	}
 
-	importType := toolkit.JSON{
-		"Form":   "func",
-		"Params": []string{m.opts.MeterType},
+	importType := toolkit.TypeEntry{
+		Form:   "func",
+		Params: []string{m.opts.MeterType},
 	}
 
 	var (
@@ -159,79 +160,83 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 	)
 
 	copy(newModule, module)
+	//fmt.Printf("%#v", newModule)
 
 	for _, section := range newModule {
-		sectionName, exist := section["Name"]
+		sectionName, exist := section["name"]
 		if !exist {
 			continue
 		}
 		switch sectionName.(string) {
 		case "type":
-			entries := section["Entries"].([]interface{})
+			var entries []toolkit.TypeEntry
+			ientries, exist := section["entries"]
+			if exist {
+				entries = ientries.([]toolkit.TypeEntry)
+			}
 			entries = append(entries, importType)
-			section["Entries"] = entries
-			importEntry["Type"] = len(entries) - 1
+			section["entries"] = entries
+			importEntry.Type = uint64(len(entries) - 1)
 			// save for use for the code section.
 			typeModule = section
 		case "function":
 			// save for use for the code section.
 			functionModule = section
 		case "import":
-			entries := section["Entries"].([]interface{})
+			var entries []toolkit.ImportEntry
+			ientries, exist := section["entries"]
+			if exist {
+				entries = ientries.([]toolkit.ImportEntry)
+			}
 			for _, entry := range entries {
-				importEntry := entry.(toolkit.JSON)
-				if importEntry["ModuleStr"].(string) == m.opts.ModuleStr && importEntry["FieldStr"].(string) == m.opts.FieldStr {
+				if entry.ModuleStr == m.opts.ModuleStr && entry.FieldStr == m.opts.FieldStr {
 					return nil, ErrImportMeterFunc
 				}
 
-				if importEntry["Kind"] == "function" {
+				if entry.Kind == "function" {
 					funcIndex += 1
 				}
 			}
 			entries = append(entries, importEntry)
 			// append the metering import.
-			section["Entries"] = entries
-			fmt.Printf("%#v\n", section)
+			section["entries"] = entries
 		case "export":
-			entries := section["Entries"].([]interface{})
-			for _, entry := range entries {
-				exportEntry := entry.(toolkit.JSON)
-				entryIndex := exportEntry["Index"].(uint32)
-				if exportEntry["Kind"].(string) == "function" && entryIndex >= uint32(funcIndex) {
-					entryIndex += 1
-					exportEntry["Index"] = entryIndex
+			entries := section["entries"].([]toolkit.ExportEntry)
+			for i, entry := range entries {
+				if entry.Kind == "function" && entry.Index >= uint32(funcIndex) {
+					entries[i].Index = entry.Index + 1
+					// FIXME: maybe has bug? value pass or pointer pass.
 				}
 			}
 		case "element":
-			entries := section["Entries"].([]interface{})
+			entries := section["entries"].([]toolkit.ElementEntry)
 			for _, entry := range entries {
 				// remap element indices.
-				elemEntry := entry.(toolkit.JSON)
-				elements := elemEntry["Elements"].([]interface{})
-				newElements := make([]uint64, 0, len(elements))
-				for _, element := range elements {
-					el := element.(uint64)
+				newElements := make([]uint64, 0, len(entry.Elements))
+				for _, el := range entry.Elements {
 					if el >= uint64(funcIndex) {
 						el += 1
 					}
 					newElements = append(newElements, el)
 				}
-				elemEntry["Elements"] = newElements
+				entry.Elements = newElements
 			}
 		case "start":
-			index := section["Index"].(uint32)
+			index := section["index"].(uint32)
 			if index >= uint32(funcIndex) {
 				index += 1
 			}
-			section["Index"] = index
+			section["index"] = index
 		case "code":
-			entries := section["Entries"].([]interface{})
+			entries := section["entries"].([]toolkit.CodeBody)
+			funcEntries := functionModule["entries"].([]uint64)
+			typEntries := typeModule["entries"].([]toolkit.TypeEntry)
 			for i, entry := range entries {
-				typeIndex := functionModule["Entries"].([]interface{})[i].(uint64)
-				typ := typeModule["Entries"].([]interface{})[typeIndex].(toolkit.JSON)
-				cost := m.getCost(typ, m.costTable["Type"].(toolkit.JSON))
+				typeIndex := funcEntries[i]
+				typ := typEntries[typeIndex]
+				cost := getCost(typ, m.costTable["type"].(toolkit.JSON), defaultCost)
 
-				m.meterCodeEntry(entry.(toolkit.CodeBody), m.costTable["Code"].(toolkit.JSON), funcIndex, cost)
+				entries[i] = meterCodeEntry(entry, m.costTable["code"].(toolkit.JSON), m.opts.MeterType, funcIndex, cost)
 			}
 		}
 	}
@@ -239,54 +244,94 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 }
 
 // getCost returns the cost of an operation for the entry in a section from the cost table.
-func (m *Metering) getCost(j interface{}, costTable toolkit.JSON) (cost uint64) {
-	var costDefault uint64
+func getCost(j interface{}, costTable toolkit.JSON, defaultCost uint64) (cost uint64) {
 	if dc, exist := costTable["DEFAULT"]; exist {
-		costDefault = dc.(uint64)
-	} else {
-		costDefault = defaultCost
+		defaultCost = uint64(dc.(float64))
 	}
-
-	switch jj := j.(type) {
-	case []interface{}:
-		for _, el := range jj {
-			cost += m.getCost(el, costTable)
+	rval := reflect.ValueOf(j)
+	kind := rval.Type().Kind()
+	if kind == reflect.Slice {
+		for i := 0; i < rval.Len(); i++ {
+			cost += getCost(rval.Index(i).Interface(), costTable, 0)
 		}
-	case toolkit.JSON:
-		for propName := range jj {
-			propCost, exist := costTable[propName]
+	} else if kind == reflect.Struct {
+		rtype := rval.Type()
+		for i := 0; i < rval.NumField(); i++ {
+			rv := rval.Field(i)
+			propCost, exist := costTable[toolkit.Lcfirst(rtype.Field(i).Name)]
 			if exist {
-				cost += m.getCost(jj[propName], propCost.(toolkit.JSON))
+				cost += getCost(rv.Interface(), propCost.(toolkit.JSON), defaultCost)
 			}
 		}
-	case string:
-		c, exist := costTable[jj]
+	} else if kind == reflect.String {
+		c, exist := costTable[j.(string)]
 		if exist {
-			cost = c.(uint64)
+			cost = uint64(c.(float64))
 		} else {
-			cost = costDefault
+			cost = defaultCost
 		}
-	default:
-		cost = costDefault
+	} else {
+		cost = defaultCost
 	}
 	return
 }
 
 // meterCodeEntry meters a single code entry (see toolkit.CodeBody).
-func (m *Metering) meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON, meterFuncIndex int, cost uint64) interface{} {
-	meterType := m.opts.MeterType
+func meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON, meterType string, meterFuncIndex int, cost uint64) toolkit.CodeBody {
+	getImmediateFromOP := func(name, opType string) string {
+		var immediatesKey string
+		if name == "const" {
+			immediatesKey = opType
+		} else {
+			immediatesKey = name
+		}
+		return toolkit.OP_IMMEDIATES[immediatesKey]
+	}
 
 	meteringStatement := func(cost uint64, meteringImportIndex int) (ops []toolkit.OP) {
 		opsJson := toolkit.Text2Json(fmt.Sprintf("%s.const %v call %v", meterType, cost, meteringImportIndex))
 		for _, op := range opsJson {
+			//immediates, _ := strconv.ParseUint(op["immediates"].(string), 10, 64)
+
 			oop := toolkit.OP{
-				Name:       op["Name"].(string),
-				Type:       op["Type"].(string),
-				Immediates: op["Immediates"],
+				Name: op["name"].(string),
 			}
 
-			if rt, ok := op["ReturnType"]; ok {
+			// convert immediates.
+			imm := getImmediateFromOP(oop.Name, meterType)
+			if imm != "" {
+				opImm := op["immediates"]
+				switch imm {
+				case "varuint1":
+					imme, _ := strconv.ParseInt(opImm.(string), 10, 8)
+					oop.Immediates = int8(imme)
+				case "varuint32":
+					imme, _ := strconv.ParseUint(opImm.(string), 10, 32)
+					oop.Immediates = uint32(imme)
+				case "varint32":
+					imme, _ := strconv.ParseInt(opImm.(string), 10, 32)
+					oop.Immediates = int32(imme)
+				case "varint64":
+					imme, _ := strconv.ParseInt(opImm.(string), 10, 64)
+					oop.Immediates = int64(imme)
+				case "uint32":
+					oop.Immediates = opImm.([]byte)
+				case "uint64":
+					oop.Immediates = opImm.([]byte)
+				case "block_type":
+					oop.Immediates = opImm.(string)
+				case "br_table", "call_indirect", "memory_immediate":
+					oop.Immediates = opImm.(toolkit.JSON)
+				}
+				//fmt.Printf("immediate %v %v\n", imm, oop.Immediates)
+			}
+
+			if rt, ok := op["return_type"]; ok {
 				oop.ReturnType = rt.(string)
+			}
+
+			if rt, ok := op["type"]; ok {
+				oop.Type = rt.(string)
 			}
 
 			ops = append(ops, oop)
@@ -310,7 +355,7 @@ func (m *Metering) meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON
 		// sum the operations cost
 		sum := uint64(0)
 		for _, op := range code {
-			sum += m.getCost(op.Name, m.costTable["Code"].(toolkit.JSON))
+			sum += getCost(op.Name, costTable["code"].(toolkit.JSON), defaultCost)
 		}
 		return sum
 	}
@@ -320,10 +365,12 @@ func (m *Metering) meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON
 		code         = make([]toolkit.OP, len(entry.Code))
 		meteredCode  []toolkit.OP
 	)
+	//fmt.Printf("meter the meter cost %d\n", meteringCost)
+
 	// create a code copy.
 	copy(code, entry.Code)
 
-	cost += m.getCost(entry.Locals, costTable["Locals"].(toolkit.JSON))
+	cost += getCost(entry.Locals, costTable["locals"].(toolkit.JSON), defaultCost)
 
 	for len(code) > 0 {
 		i := 0
@@ -334,7 +381,7 @@ func (m *Metering) meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON
 			i += 1
 
 			remapOp(op, meterFuncIndex)
-			cost += m.getCost(op.Name, costTable["Code"].(toolkit.JSON))
+			cost += getCost(op.Name, costTable["code"].(toolkit.JSON), defaultCost)
 
 			if _, exist := branchOps[op.Name]; exist {
 				break
