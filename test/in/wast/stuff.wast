@@ -5,5 +5,5 @@
   (start 1)
   (table 0 1 anyfunc)
   (func)
-  (func (type 0) (drop (i32.const 42)))
+  (func (type 1) (drop (i32.const 42)))
   (export "e" (func 1)))

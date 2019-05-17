@@ -111,7 +111,7 @@ func TestBasicMeteringTests(t *testing.T) {
 		//fmt.Printf("%s exp %#v\n", file.Name(), expectedJson)
 
 		if !assert.Equal(t, true, assert.ObjectsAreEqual(meteredModule, expectedJson)) {
-			fmt.Printf("%+v\n%+v\n", meteredModule, expectedJson)
+			fmt.Printf("%#v\n%#v\n", meteredModule, expectedJson)
 		}
 	}
 

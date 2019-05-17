@@ -168,15 +168,28 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 		}
 		switch sectionName.(string) {
 		case "type":
-			var entries []toolkit.TypeEntry
+			var (
+				entries      []toolkit.TypeEntry
+				meterTypeInd = -1
+			)
 			ientries, exist := section["entries"]
 			if exist {
 				entries = ientries.([]toolkit.TypeEntry)
 			}
-			//fmt.Printf("Entries %#v\n", entries)
-			entries = append(entries, importType)
-			section["entries"] = entries
-			importEntry.Type = uint64(len(entries) - 1)
+			for i, entry := range entries {
+				if reflect.DeepEqual(entry, importType) {
+					meterTypeInd = i
+					break
+				}
+			}
+			if meterTypeInd == -1 {
+				//fmt.Printf("Entries %#v\n", entries)
+				entries = append(entries, importType)
+				section["entries"] = entries
+				importEntry.Type = uint64(len(entries) - 1)
+			} else {
+				importEntry.Type = uint64(meterTypeInd)
+			}
 			// save for use for the code section.
 			typeModule = section
 		case "function":
@@ -262,7 +275,11 @@ func getCost(j interface{}, costTable toolkit.JSON, defaultCost uint64) (cost ui
 			}
 		}
 	} else if kind == reflect.String {
-		c, exist := costTable[j.(string)]
+		key := j.(string)
+		if key == "" {
+			return 0
+		}
+		c, exist := costTable[key]
 		if exist {
 			cost = uint64(c.(float64))
 		} else {
