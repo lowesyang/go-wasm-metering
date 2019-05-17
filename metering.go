@@ -1,20 +1,17 @@
 package go_wasm_metering
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/yyh1102/go-wasm-metering/toolkit"
-	"io/ioutil"
 	"reflect"
 	"strconv"
 )
 
 const (
-	defaultCostTablePath = "defaultCostTable.json"
-	defaultModuleStr     = "metering"
-	defaultFieldStr      = "usegas"
-	defaultMeterType     = "i64"
-	defaultCost          = uint64(0)
+	defaultModuleStr = "metering"
+	defaultFieldStr  = "usegas"
+	defaultMeterType = "i64"
+	defaultCost      = uint64(0)
 )
 
 var (
@@ -50,21 +47,20 @@ func MeterWASM(wasm []byte, opts *Options) ([]byte, error) {
 }
 
 type Options struct {
-	CostTable string // path of cost table file.
-	ModuleStr string // the import string for metering function.
-	FieldStr  string // the field string for the metering function.
-	MeterType string // the register type that is used to meter. Can be `i64`, `i32`, `f64`, `f32`.
+	CostTable toolkit.JSON // path of cost table file.
+	ModuleStr string       // the import string for metering function.
+	FieldStr  string       // the field string for the metering function.
+	MeterType string       // the register type that is used to meter. Can be `i64`, `i32`, `f64`, `f32`.
 }
 
 type Metering struct {
-	costTable toolkit.JSON
-	opts      Options
+	opts Options
 }
 
 func newMetring(opts Options) (*Metering, error) {
 	// set defaults.
-	if opts.CostTable == "" {
-		opts.CostTable = defaultCostTablePath
+	if opts.CostTable == nil {
+		opts.CostTable = defaultCostTable
 	}
 
 	if opts.ModuleStr == "" {
@@ -79,19 +75,8 @@ func newMetring(opts Options) (*Metering, error) {
 		opts.MeterType = defaultMeterType
 	}
 
-	table, err := ioutil.ReadFile(opts.CostTable)
-	if err != nil {
-		return nil, err
-	}
-
-	costTable := make(toolkit.JSON)
-	if err := json.Unmarshal(table, &costTable); err != nil {
-		return nil, err
-	}
-
 	return &Metering{
-		costTable: costTable,
-		opts:      opts,
+		opts: opts,
 	}, nil
 }
 
@@ -245,9 +230,9 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 			for i, entry := range entries {
 				typeIndex := funcEntries[i]
 				typ := typEntries[typeIndex]
-				cost := getCost(typ, m.costTable["type"].(toolkit.JSON), defaultCost)
+				cost := getCost(typ, m.opts.CostTable["type"].(toolkit.JSON), defaultCost)
 
-				entries[i] = meterCodeEntry(entry, m.costTable["code"].(toolkit.JSON), m.opts.MeterType, funcIndex, cost)
+				entries[i] = meterCodeEntry(entry, m.opts.CostTable["code"].(toolkit.JSON), m.opts.MeterType, funcIndex, cost)
 			}
 		}
 	}

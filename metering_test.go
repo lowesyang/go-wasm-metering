@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	defaultCostTable toolkit.JSON
-	defaultCTPath    = path.Join("test", "defaultCostTable.json")
+	defaultTestCostTable toolkit.JSON
+	defaultCTPath        = path.Join("test", "defaultCostTable.json")
 )
 
 func init() {
@@ -55,7 +55,7 @@ func TestBasic(t *testing.T) {
 	assert.Nil(t, err)
 
 	meteredWasm, err := MeterWASM(wasm, &Options{
-		CostTable: defaultCTPath,
+		CostTable: defaultTestCostTable,
 	})
 	assert.Nil(t, err)
 	meteredJson := toolkit.Wasm2Json(meteredWasm)
@@ -90,8 +90,8 @@ func TestBasicMeteringTests(t *testing.T) {
 			costTable = defaultCostTable
 		}
 		metering := Metering{
-			costTable: costTable,
 			opts: Options{
+				CostTable: costTable,
 				ModuleStr: defaultModuleStr,
 				FieldStr:  defaultFieldStr,
 				MeterType: defaultMeterType,
