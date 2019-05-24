@@ -1,7 +1,6 @@
 package toolkit
 
 import (
-	"reflect"
 	"strings"
 )
 
@@ -237,9 +236,9 @@ var (
 		11: "data",
 	}
 
-	immeParsers = reflect.ValueOf(immediataryParsers{})
-	tParsers    = reflect.ValueOf(typeParsers{})
-	secParsers  = reflect.ValueOf(sectionParsers{})
+	immeParsers = immediataryParsers{}
+	tParsers    = typeParsers{}
+	secParsers  = sectionParsers{}
 )
 
 type immediataryParsers struct{}
@@ -406,13 +405,23 @@ func (s sectionParsers) Import(stream *Stream) ImportSec {
 
 		kind := stream.ReadByte()
 		externalKind := W2J_EXTERNAL_KIND[kind]
-		returned := tParsers.MethodByName(Ucfirst(externalKind)).Call([]reflect.Value{reflect.ValueOf(stream)})
+		var returned interface{}
+		switch externalKind {
+		case "function":
+			returned = tParsers.Function(stream)
+		case "table":
+			returned = tParsers.Table(stream)
+		case "memory":
+			returned = tParsers.Memory(stream)
+		case "global":
+			returned = tParsers.Global(stream)
+		}
 
 		entry := ImportEntry{
 			ModuleStr: string(moduleStr),
 			FieldStr:  string(fieldStr),
 			Kind:      externalKind,
-			Type:      returned[0].Interface(),
+			Type:      returned,
 		}
 
 		importSec.Entries = append(importSec.Entries, entry)
@@ -601,21 +610,59 @@ func Wasm2Json(buf []byte) []JSON {
 	for stream.Len() != 0 {
 		header := ParseSectionHeader(stream)
 		//fmt.Printf("%#v\n", header)
-		name := header.Name
-		parser := secParsers.MethodByName(Ucfirst(name))
-		in := []reflect.Value{reflect.ValueOf(stream)}
-		if parser.Type().NumIn() == 2 {
-			in = append(in, reflect.ValueOf(header))
-		}
-		rsec := parser.Call(in)[0]
-
-		// convert to JSON
 		jsonObj := make(JSON)
-		rtSec := rsec.Type()
-		for i := 0; i < rsec.NumField(); i++ {
-			jsonObj[Lcfirst(rtSec.Field(i).Name)] = rsec.Field(i).Interface()
-			//fmt.Printf("%v %v\n",rtSec.Field(i).Name,rsec.Field(i).Interface())
+		switch header.Name {
+		case "custom":
+			rsec := secParsers.Custom(stream, header)
+			jsonObj["name"] = rsec.Name
+			jsonObj["section_name"] = rsec.SectionName
+			jsonObj["payload"] = rsec.Payload
+		case "type":
+			rsec := secParsers.Type(stream)
+			jsonObj["name"] = rsec.Name
+			jsonObj["entries"] = rsec.Entries
+		case "import":
+			rsec := secParsers.Import(stream)
+			jsonObj["name"] = rsec.Name
+			jsonObj["entries"] = rsec.Entries
+		case "function":
+			rsec := secParsers.Function(stream)
+			jsonObj["name"] = rsec.Name
+			jsonObj["entries"] = rsec.Entries
+		case "table":
+			rsec := secParsers.Table(stream)
+			jsonObj["name"] = rsec.Name
+			jsonObj["entries"] = rsec.Entries
+		case "memory":
+			rsec := secParsers.Memory(stream)
+			jsonObj["name"] = rsec.Name
+			jsonObj["entries"] = rsec.Entries
+		case "global":
+			rsec := secParsers.Global(stream)
+			jsonObj["name"] = rsec.Name
+			jsonObj["entries"] = rsec.Entries
+		case "export":
+			rsec := secParsers.Export(stream)
+			jsonObj["name"] = rsec.Name
+			jsonObj["entries"] = rsec.Entries
+		case "start":
+			rsec := secParsers.Start(stream)
+			jsonObj["name"] = rsec.Name
+			jsonObj["index"] = rsec.Index
+		case "element":
+			rsec := secParsers.Element(stream)
+			jsonObj["name"] = rsec.Name
+			jsonObj["entries"] = rsec.Entries
+		case "code":
+			rsec := secParsers.Code(stream)
+			jsonObj["name"] = rsec.Name
+			jsonObj["entries"] = rsec.Entries
+		case "data":
+			rsec := secParsers.Data(stream)
+			jsonObj["name"] = rsec.Name
+			jsonObj["entries"] = rsec.Entries
 		}
+
 		resJson = append(resJson, jsonObj)
 	}
 
@@ -669,8 +716,30 @@ func ParseOp(stream *Stream) OP {
 	}
 	immediates, exist := OP_IMMEDIATES[immediatesKey]
 	if exist {
-		returned := immeParsers.MethodByName(Ucfirst(immediates)).Call([]reflect.Value{reflect.ValueOf(stream)})
-		finalOP.Immediates = returned[0].Interface()
+		var returned interface{}
+		switch immediates {
+		case "block_type":
+			returned = immeParsers.BlockType(stream)
+		case "call_indirect":
+			returned = immeParsers.CallIndirect(stream)
+		case "varuint32":
+			returned = immeParsers.Varuint32(stream)
+		case "varuint1":
+			returned = immeParsers.Varuint1(stream)
+		case "varint32":
+			returned = immeParsers.Varint32(stream)
+		case "varint64":
+			returned = immeParsers.Varint64(stream)
+		case "uint32":
+			returned = immeParsers.Uint32(stream)
+		case "uint64":
+			returned = immeParsers.Uint64(stream)
+		case "br_table":
+			returned = immeParsers.BrTable(stream)
+		case "memory_immediate":
+			returned = immeParsers.MemoryImmediate(stream)
+		}
+		finalOP.Immediates = returned
 	}
 
 	return finalOP

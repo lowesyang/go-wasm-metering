@@ -1,9 +1,5 @@
 package toolkit
 
-import (
-	"reflect"
-)
-
 var (
 	J2W_LANGUAGE_TYPES = map[string]byte{
 		"i32":        0x7f,
@@ -212,9 +208,9 @@ var (
 		"f64.reinterpret/i64": 0xbf,
 	}
 
-	typeGen  = reflect.ValueOf(typeGenerators{})
-	immeGen  = reflect.ValueOf(immediataryGenerators{})
-	entryGen = reflect.ValueOf(entryGenerators{})
+	typeGen  = typeGenerators{}
+	immeGen  = immediataryGenerators{}
+	entryGen = entryGenerators{}
 )
 
 type typeGenerators struct{}
@@ -357,7 +353,16 @@ func (entryGenerators) Import(entry ImportEntry, stream *Stream) {
 
 	stream.Write([]byte{J2W_EXTERNAL_KIND[entry.Kind]})
 
-	typeGen.MethodByName(Ucfirst(entry.Kind)).Call([]reflect.Value{reflect.ValueOf(entry.Type), reflect.ValueOf(stream)})
+	switch entry.Kind {
+	case "function":
+		typeGen.Function(entry.Type.(uint64), stream)
+	case "table":
+		typeGen.Table(entry.Type.(Table), stream)
+	case "memory":
+		typeGen.Memory(entry.Type.(MemLimits), stream)
+	case "global":
+		typeGen.Global(entry.Type.(Global), stream)
+	}
 }
 
 func (entryGenerators) Function(entry uint64, stream *Stream) []byte {
@@ -468,11 +473,28 @@ func GenerateOP(op OP, stream *Stream) *Stream {
 	}
 	immediates, exist := OP_IMMEDIATES[immediateKey]
 	if exist {
-		//fmt.Printf("imm %s %v\n", immediates, op.Immediates)
-		immeGen.MethodByName(Ucfirst(immediates)).Call([]reflect.Value{
-			reflect.ValueOf(op.Immediates),
-			reflect.ValueOf(stream),
-		})
+		switch immediates {
+		case "block_type":
+			immeGen.BlockType(op.Immediates.(string), stream)
+		case "varuint32":
+			immeGen.Varuint32(op.Immediates.(uint32), stream)
+		case "varint32":
+			immeGen.Varint32(op.Immediates.(int32), stream)
+		case "varint64":
+			immeGen.Varint64(op.Immediates.(int64), stream)
+		case "varuint1":
+			immeGen.Varuint1(op.Immediates.(int8), stream)
+		case "uint32":
+			immeGen.Uint32(op.Immediates.([]byte), stream)
+		case "uint64":
+			immeGen.Uint64(op.Immediates.([]byte), stream)
+		case "call_indirect":
+			immeGen.CallIndirect(op.Immediates.(JSON), stream)
+		case "memory_immediate":
+			immeGen.MemoryImmediate(op.Immediates.(JSON), stream)
+		case "br_table":
+			immeGen.BrTable(op.Immediates.(JSON), stream)
+		}
 	}
 	return stream
 }
@@ -498,15 +520,70 @@ func GenerateSection(j JSON, stream *Stream) *Stream {
 	} else if name == "start" {
 		EncodeULEB128(uint64(j["index"].(uint32)), payload)
 	} else {
-		entries, exist := j["entries"]
+		ientries, exist := j["entries"]
 		if exist {
-			entries := reflect.ValueOf(entries)
-			EncodeULEB128(uint64(entries.Len()), payload)
 			//fmt.Printf("Gen %v\n", name)
-			method := entryGen.MethodByName(Ucfirst(name))
-			for i := 0; i < entries.Len(); i++ {
-				entry := entries.Index(i)
-				method.Call([]reflect.Value{entry, reflect.ValueOf(payload)})
+			switch name {
+			case "type":
+				entries := ientries.([]TypeEntry)
+				EncodeULEB128(uint64(len(entries)), payload)
+				for _, entry := range entries {
+					entryGen.Type(entry, payload)
+				}
+			case "import":
+				entries := ientries.([]ImportEntry)
+				EncodeULEB128(uint64(len(entries)), payload)
+				for _, entry := range entries {
+					entryGen.Import(entry, payload)
+				}
+			case "function":
+				entries := ientries.([]uint64)
+				EncodeULEB128(uint64(len(entries)), payload)
+				for _, entry := range entries {
+					entryGen.Function(entry, payload)
+				}
+			case "table":
+				entries := ientries.([]Table)
+				EncodeULEB128(uint64(len(entries)), payload)
+				for _, entry := range entries {
+					entryGen.Table(entry, payload)
+				}
+			case "memory":
+				entries := ientries.([]MemLimits)
+				EncodeULEB128(uint64(len(entries)), payload)
+				for _, entry := range entries {
+					entryGen.Memory(entry, payload)
+				}
+			case "global":
+				entries := ientries.([]GlobalEntry)
+				EncodeULEB128(uint64(len(entries)), payload)
+				for _, entry := range entries {
+					entryGen.Global(entry, payload)
+				}
+			case "export":
+				entries := ientries.([]ExportEntry)
+				EncodeULEB128(uint64(len(entries)), payload)
+				for _, entry := range entries {
+					entryGen.Export(entry, payload)
+				}
+			case "element":
+				entries := ientries.([]ElementEntry)
+				EncodeULEB128(uint64(len(entries)), payload)
+				for _, entry := range entries {
+					entryGen.Element(entry, payload)
+				}
+			case "code":
+				entries := ientries.([]CodeBody)
+				EncodeULEB128(uint64(len(entries)), payload)
+				for _, entry := range entries {
+					entryGen.Code(entry, payload)
+				}
+			case "data":
+				entries := ientries.([]DataSegment)
+				EncodeULEB128(uint64(len(entries)), payload)
+				for _, entry := range entries {
+					entryGen.Data(entry, payload)
+				}
 			}
 		}
 	}
