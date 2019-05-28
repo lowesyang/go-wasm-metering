@@ -15,7 +15,7 @@ package main
 import "github.com/yyh1102/go-wasm-metering"
 
 func main(){
-	wasm, err:=ioutil.ReadFile("xxx")
+	wasm, err:=ioutil.ReadFile("xxx.wasm")
 	if err!=nil{
 		panic(err)
 	}
