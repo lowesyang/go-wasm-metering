@@ -54,7 +54,7 @@ func TestBasic(t *testing.T) {
 	wasm, err := ioutil.ReadFile(path.Join("test", "in", "wasm", "basic.wasm"))
 	assert.Nil(t, err)
 
-	meteredWasm, err := MeterWASM(wasm, &Options{
+	meteredWasm, _, err := MeterWASM(wasm, &Options{
 		CostTable: defaultTestCostTable,
 	})
 	assert.Nil(t, err)
@@ -98,12 +98,13 @@ func TestBasicMeteringTests(t *testing.T) {
 			},
 		}
 		//fmt.Printf("%s %#v\n", file.Name(), module)
-		meteredModule, err := metering.meterJSON(module)
+		meteredModule, _, err := metering.meterJSON(module)
 		if err != nil {
 			assert.Equal(t, "basic+import.wasm", file.Name())
 			continue
 		}
 		//fmt.Printf("%s old %#v\n", file.Name(), meteredModule)
+		//fmt.Printf("Gas: %v\n", gasCost)
 
 		expectedWasm, err := ioutil.ReadFile(path.Join("test", "expected-out", "wasm", file.Name()))
 		assert.Nil(t, err)

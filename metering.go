@@ -30,20 +30,20 @@ var (
 
 // MeterWASM injects metering into WebAssembly binary code.
 // This func is the real exported function used by outer callers.
-func MeterWASM(wasm []byte, opts *Options) ([]byte, error) {
+func MeterWASM(wasm []byte, opts *Options) ([]byte, uint64, error) {
 	module := toolkit.Wasm2Json(wasm)
 	if opts == nil {
 		opts = &Options{}
 	}
 	metering, err := newMetring(*opts)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	module, err = metering.meterJSON(module)
+	module, gasCost, err := metering.meterJSON(module)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return toolkit.Json2Wasm(module), nil
+	return toolkit.Json2Wasm(module), gasCost, nil
 }
 
 type Options struct {
@@ -81,7 +81,7 @@ func newMetring(opts Options) (*Metering, error) {
 }
 
 // meterJSON injects metering into a JSON output of Wasm2Json.
-func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
+func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, uint64, error) {
 	// find section.
 	findSection := func(module []toolkit.JSON, sectionName string) toolkit.JSON {
 		for _, section := range module {
@@ -141,6 +141,7 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 		functionModule toolkit.JSON
 		funcIndex      int
 		newModule      = make([]toolkit.JSON, len(module))
+		gasCost        uint64
 	)
 
 	copy(newModule, module)
@@ -188,7 +189,7 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 			}
 			for _, entry := range entries {
 				if entry.ModuleStr == m.opts.ModuleStr && entry.FieldStr == m.opts.FieldStr {
-					return nil, ErrImportMeterFunc
+					return nil, 0, ErrImportMeterFunc
 				}
 
 				if entry.Kind == "function" {
@@ -232,11 +233,12 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, error) {
 				typ := typEntries[typeIndex]
 				cost := getCost(typ, m.opts.CostTable["type"].(toolkit.JSON), defaultCost)
 
-				entries[i] = meterCodeEntry(entry, m.opts.CostTable["code"].(toolkit.JSON), m.opts.MeterType, funcIndex, cost)
+				entries[i], cost = meterCodeEntry(entry, m.opts.CostTable["code"].(toolkit.JSON), m.opts.MeterType, funcIndex, cost)
+				gasCost += cost
 			}
 		}
 	}
-	return newModule, nil
+	return newModule, gasCost, nil
 }
 
 // getCost returns the cost of an operation for the entry in a section from the cost table.
@@ -278,7 +280,7 @@ func getCost(j interface{}, costTable toolkit.JSON, defaultCost uint64) (cost ui
 }
 
 // meterCodeEntry meters a single code entry (see toolkit.CodeBody).
-func meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON, meterType string, meterFuncIndex int, cost uint64) toolkit.CodeBody {
+func meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON, meterType string, meterFuncIndex int, cost uint64) (toolkit.CodeBody, uint64) {
 	getImmediateFromOP := func(name, opType string) string {
 		var immediatesKey string
 		if name == "const" {
@@ -372,6 +374,7 @@ func meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON, meterType st
 	copy(code, entry.Code)
 
 	cost += getCost(entry.Locals, costTable["locals"].(toolkit.JSON), defaultCost)
+	sum := cost
 
 	for len(code) > 0 {
 		i := 0
@@ -395,6 +398,7 @@ func meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON, meterType st
 			cost += meteringCost
 			meteredCode = append(meteredCode, meteringStatement(cost, meterFuncIndex)...)
 		}
+		sum += cost
 
 		meteredCode = append(meteredCode, code[:i]...)
 		code = code[i:]
@@ -402,5 +406,5 @@ func meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON, meterType st
 	}
 
 	entry.Code = meteredCode
-	return entry
+	return entry, sum
 }
