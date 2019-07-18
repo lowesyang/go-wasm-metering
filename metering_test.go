@@ -5,25 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"github.com/yyh1102/go-wasm-metering/test"
 	"github.com/yyh1102/go-wasm-metering/toolkit"
 	"io/ioutil"
 	"path"
 	"testing"
 )
-
-var (
-	defaultTestCostTable toolkit.JSON
-	defaultCTPath        = path.Join("test", "defaultCostTable.json")
-)
-
-func init() {
-	defaultCostT, err := readCostTable(defaultCTPath)
-	if err != nil {
-		panic(err)
-	}
-
-	defaultCostTable = defaultCostT
-}
 
 func readCostTable(path string) (toolkit.JSON, error) {
 	data, err := ioutil.ReadFile(path)
@@ -55,7 +42,7 @@ func TestBasic(t *testing.T) {
 	assert.Nil(t, err)
 
 	meteredWasm, _, err := MeterWASM(wasm, &Options{
-		CostTable: defaultTestCostTable,
+		CostTable: test.DefaultCostTable,
 	})
 	assert.Nil(t, err)
 	meteredJson := toolkit.Wasm2Json(meteredWasm)
@@ -85,13 +72,9 @@ func TestBasicMeteringTests(t *testing.T) {
 		module := toolkit.Wasm2Json(wasm)
 
 		// read cost table json.
-		costTable, err := readCostTable(path.Join(dirName, "costTables", file.Name()))
-		if err != nil {
-			costTable = defaultCostTable
-		}
 		metering := Metering{
 			opts: Options{
-				CostTable: costTable,
+				CostTable: test.DefaultCostTable,
 				ModuleStr: defaultModuleStr,
 				FieldStr:  defaultFieldStr,
 				MeterType: defaultMeterType,

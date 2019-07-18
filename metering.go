@@ -244,7 +244,7 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, uint64, err
 // getCost returns the cost of an operation for the entry in a section from the cost table.
 func getCost(j interface{}, costTable toolkit.JSON, defaultCost uint64) (cost uint64) {
 	if dc, exist := costTable["DEFAULT"]; exist {
-		defaultCost = uint64(dc.(float64))
+		defaultCost = uint64(dc.(int))
 	}
 	rval := reflect.ValueOf(j)
 	kind := rval.Type().Kind()
@@ -268,7 +268,7 @@ func getCost(j interface{}, costTable toolkit.JSON, defaultCost uint64) (cost ui
 		}
 		c, exist := costTable[key]
 		if exist {
-			cost = uint64(c.(float64))
+			cost = uint64(c.(int))
 		} else {
 			cost = defaultCost
 		}
@@ -344,12 +344,19 @@ func meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON, meterType st
 
 	remapOp := func(op toolkit.OP, funcIndex int) {
 		if op.Name == "call" {
-			immediates := op.Immediates.(string)
-			rv, _ := strconv.ParseInt(immediates, 10, 64)
-			if rv >= int64(funcIndex) {
-				rv += 1
+			switch imm := op.Immediates.(type) {
+			case string:
+				rv, _ := strconv.ParseInt(imm, 10, 64)
+				if rv >= int64(funcIndex) {
+					rv += 1
+				}
+				op.Immediates = strconv.FormatInt(rv, 10)
+			case uint32:
+				if imm >= uint32(funcIndex) {
+					imm += 1
+				}
+				op.Immediates = strconv.FormatUint(uint64(imm), 10)
 			}
-			op.Immediates = strconv.FormatInt(rv, 10)
 		}
 	}
 
