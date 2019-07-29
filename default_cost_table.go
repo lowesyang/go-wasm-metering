@@ -1,4 +1,4 @@
-package go_wasm_metering
+package metering
 
 import "github.com/yyh1102/go-wasm-metering/toolkit"
 

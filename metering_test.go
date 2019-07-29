@@ -1,4 +1,4 @@
-package go_wasm_metering
+package metering
 
 import (
 	"bytes"
@@ -95,6 +95,7 @@ func TestBasicMeteringTests(t *testing.T) {
 		//fmt.Printf("%s exp %#v\n", file.Name(), expectedJson)
 
 		if !assert.Equal(t, true, assert.ObjectsAreEqual(meteredModule, expectedJson)) {
+			fmt.Printf("file name %s\n", file.Name())
 			fmt.Printf("%#v\n%#v\n", meteredModule, expectedJson)
 		}
 	}

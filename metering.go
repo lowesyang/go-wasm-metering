@@ -1,4 +1,4 @@
-package go_wasm_metering
+package metering
 
 import (
 	"fmt"
@@ -16,15 +16,15 @@ const (
 
 var (
 	branchOps = map[string]struct{}{
-		"grow_memory": struct{}{},
-		"end":         struct{}{},
-		"br":          struct{}{},
-		"br_table":    struct{}{},
-		"br_if":       struct{}{},
-		"if":          struct{}{},
-		"else":        struct{}{},
-		"return":      struct{}{},
-		"loop":        struct{}{},
+		"grow_memory": {},
+		"end":         {},
+		"br":          {},
+		"br_table":    {},
+		"br_if":       {},
+		"if":          {},
+		"else":        {},
+		"return":      {},
+		"loop":        {},
 	}
 )
 
@@ -154,28 +154,17 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, uint64, err
 		}
 		switch sectionName.(string) {
 		case "type":
-			var (
-				entries      []toolkit.TypeEntry
-				meterTypeInd = -1
-			)
+			var entries []toolkit.TypeEntry
+
 			ientries, exist := section["entries"]
 			if exist {
 				entries = ientries.([]toolkit.TypeEntry)
 			}
-			for i, entry := range entries {
-				if reflect.DeepEqual(entry, importType) {
-					meterTypeInd = i
-					break
-				}
-			}
-			if meterTypeInd == -1 {
-				//fmt.Printf("Entries %#v\n", entries)
-				entries = append(entries, importType)
-				section["entries"] = entries
-				importEntry.Type = uint64(len(entries) - 1)
-			} else {
-				importEntry.Type = uint64(meterTypeInd)
-			}
+			//fmt.Printf("Entries %#v\n", entries)
+			importEntry.Type = uint64(len(entries))
+			entries = append(entries, importType)
+			section["entries"] = entries
+
 			// save for use for the code section.
 			typeModule = section
 		case "function":
@@ -199,15 +188,23 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, uint64, err
 			// append the metering import.
 			section["entries"] = append(entries, importEntry)
 		case "export":
-			entries := section["entries"].([]toolkit.ExportEntry)
+			var entries []toolkit.ExportEntry
+			ientries, exist := section["entries"]
+			if exist {
+				entries = ientries.([]toolkit.ExportEntry)
+			}
 			for i, entry := range entries {
 				if entry.Kind == "function" && entry.Index >= uint32(funcIndex) {
 					entries[i].Index = entry.Index + 1
 				}
 			}
 		case "element":
-			entries := section["entries"].([]toolkit.ElementEntry)
-			for _, entry := range entries {
+			var entries []toolkit.ElementEntry
+			ientries, exist := section["entries"]
+			if exist {
+				entries = ientries.([]toolkit.ElementEntry)
+			}
+			for i, entry := range entries {
 				// remap element indices.
 				newElements := make([]uint64, 0, len(entry.Elements))
 				for _, el := range entry.Elements {
@@ -216,7 +213,7 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, uint64, err
 					}
 					newElements = append(newElements, el)
 				}
-				entry.Elements = newElements
+				entries[i].Elements = newElements
 			}
 		case "start":
 			index := section["index"].(uint32)
@@ -233,8 +230,9 @@ func (m *Metering) meterJSON(module []toolkit.JSON) ([]toolkit.JSON, uint64, err
 				typ := typEntries[typeIndex]
 				cost := getCost(typ, m.opts.CostTable["type"].(toolkit.JSON), defaultCost)
 
-				entries[i], cost = meterCodeEntry(entry, m.opts.CostTable["code"].(toolkit.JSON), m.opts.MeterType, funcIndex, cost)
+				entry, cost = meterCodeEntry(entry, m.opts.CostTable["code"].(toolkit.JSON), m.opts.MeterType, funcIndex, cost)
 				gasCost += cost
+				entries[i] = entry
 			}
 		}
 	}
@@ -339,29 +337,34 @@ func meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON, meterType st
 
 			ops = append(ops, oop)
 		}
+
 		return
 	}
 
-	remapOp := func(op toolkit.OP, funcIndex int) {
+	remapOp := func(op *toolkit.OP, funcIndex int) {
 		if op.Name == "call" {
 			switch imm := op.Immediates.(type) {
 			case string:
 				rv, _ := strconv.ParseInt(imm, 10, 64)
 				if rv >= int64(funcIndex) {
 					rv += 1
+					op.Immediates = strconv.FormatInt(rv, 10)
 				}
-				op.Immediates = strconv.FormatInt(rv, 10)
 			case uint32:
+				//fmt.Printf("funcIndex %d, imm %d\n", funcIndex, imm)
 				if imm >= uint32(funcIndex) {
 					imm += 1
+					op.Immediates = imm
 				}
-				op.Immediates = strconv.FormatUint(uint64(imm), 10)
+			default:
+				panic(fmt.Sprintf("invalid immediates type: %v", imm))
 			}
+
 		}
 	}
 
 	meterTheMeteringStatement := func() uint64 {
-		code := meteringStatement(0, 0)
+		code := meteringStatement(0, meterFuncIndex)
 		// sum the operations cost
 		sum := uint64(0)
 		for _, op := range code {
@@ -388,12 +391,10 @@ func meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON, meterType st
 
 		// meter a segment of wasm code.
 		for {
-			op := code[i]
-			i += 1
-
+			op := &code[i]
 			remapOp(op, meterFuncIndex)
-			cost += getCost(op.Name, costTable["code"].(toolkit.JSON), defaultCost)
-
+			cost += getCost(code[i].Name, costTable["code"].(toolkit.JSON), defaultCost)
+			i += 1
 			if _, exist := branchOps[op.Name]; exist {
 				break
 			}
@@ -403,7 +404,8 @@ func meterCodeEntry(entry toolkit.CodeBody, costTable toolkit.JSON, meterType st
 		if cost != 0 {
 			// add the cost of metering
 			cost += meteringCost
-			meteredCode = append(meteredCode, meteringStatement(cost, meterFuncIndex)...)
+			ops := meteringStatement(cost, meterFuncIndex)
+			meteredCode = append(meteredCode, ops...)
 		}
 		sum += cost
 

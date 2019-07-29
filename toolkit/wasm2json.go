@@ -360,7 +360,8 @@ func (sectionParsers) Custom(stream *Stream, header SectionHeader) CustomSec {
 func (sectionParsers) Type(stream *Stream) TypeSec {
 	numberOfEntries := DecodeULEB128(stream)
 	typSec := TypeSec{
-		Name: "type",
+		Name:    "type",
+		Entries: []TypeEntry{},
 	}
 
 	for i := uint64(0); i < numberOfEntries; i++ {
@@ -393,7 +394,8 @@ func (sectionParsers) Type(stream *Stream) TypeSec {
 func (s sectionParsers) Import(stream *Stream) ImportSec {
 	numberOfEntries := DecodeULEB128(stream)
 	importSec := ImportSec{
-		Name: "import",
+		Name:    "import",
+		Entries: []ImportEntry{},
 	}
 
 	for i := uint64(0); i < numberOfEntries; i++ {
@@ -433,7 +435,8 @@ func (s sectionParsers) Import(stream *Stream) ImportSec {
 func (sectionParsers) Function(stream *Stream) FuncSec {
 	numberOfEntries := DecodeULEB128(stream)
 	funcSec := FuncSec{
-		Name: "function",
+		Name:    "function",
+		Entries: []uint64{},
 	}
 
 	for i := uint64(0); i < numberOfEntries; i++ {
@@ -446,7 +449,8 @@ func (sectionParsers) Function(stream *Stream) FuncSec {
 func (s sectionParsers) Table(stream *Stream) TableSec {
 	numberOfEntries := DecodeULEB128(stream)
 	tableSec := TableSec{
-		Name: "table",
+		Name:    "table",
+		Entries: []Table{},
 	}
 
 	// parse table_type.
@@ -462,7 +466,8 @@ func (s sectionParsers) Table(stream *Stream) TableSec {
 func (sectionParsers) Memory(stream *Stream) MemSec {
 	numberOfEntries := DecodeULEB128(stream)
 	memSec := MemSec{
-		Name: "memory",
+		Name:    "memory",
+		Entries: []MemLimits{},
 	}
 
 	tparser := typeParsers{}
@@ -476,7 +481,8 @@ func (sectionParsers) Memory(stream *Stream) MemSec {
 func (sectionParsers) Global(stream *Stream) GlobalSec {
 	numberOfEntries := DecodeULEB128(stream)
 	globalSec := GlobalSec{
-		Name: "global",
+		Name:    "global",
+		Entries: []GlobalEntry{},
 	}
 
 	tparser := typeParsers{}
@@ -495,7 +501,8 @@ func (sectionParsers) Global(stream *Stream) GlobalSec {
 func (sectionParsers) Export(stream *Stream) ExportSec {
 	numberOfEntries := DecodeULEB128(stream)
 	exportSec := ExportSec{
-		Name: "export",
+		Name:    "export",
+		Entries: []ExportEntry{},
 	}
 
 	for i := uint64(0); i < numberOfEntries; i++ {
@@ -527,7 +534,8 @@ func (sectionParsers) Start(stream *Stream) StartSec {
 func (sectionParsers) Element(stream *Stream) ElementSec {
 	numberOfEntries := DecodeULEB128(stream)
 	elSec := ElementSec{
-		Name: "element",
+		Name:    "element",
+		Entries: []ElementEntry{},
 	}
 
 	tparser := typeParsers{}
@@ -551,11 +559,15 @@ func (sectionParsers) Element(stream *Stream) ElementSec {
 func (sectionParsers) Code(stream *Stream) CodeSec {
 	numberOfEntries := DecodeULEB128(stream)
 	codeSec := CodeSec{
-		Name: "code",
+		Name:    "code",
+		Entries: []CodeBody{},
 	}
 
 	for i := uint64(0); i < numberOfEntries; i++ {
-		codeBody := CodeBody{}
+		codeBody := CodeBody{
+			Locals: []LocalEntry{},
+			Code:   []OP{},
+		}
 
 		bodySize := DecodeULEB128(stream)
 		endBytes := stream.bytesRead + int(bodySize)
@@ -584,7 +596,8 @@ func (sectionParsers) Code(stream *Stream) CodeSec {
 func (sectionParsers) Data(stream *Stream) DataSec {
 	numberOfEntries := DecodeULEB128(stream)
 	dataSec := DataSec{
-		Name: "data",
+		Name:    "data",
+		Entries: []DataSegment{},
 	}
 
 	tparser := typeParsers{}

@@ -1,5 +1,7 @@
 package toolkit
 
+import "fmt"
+
 var (
 	J2W_LANGUAGE_TYPES = map[string]byte{
 		"i32":        0x7f,
@@ -226,8 +228,8 @@ func (typeGenerators) Table(table Table, stream *Stream) {
 
 // Generates a [`global_type`](https://github.com/WebAssembly/design/blob/master/BinaryEncoding.md#global_type)
 func (typeGenerators) Global(global Global, stream *Stream) {
-	stream.Write([]byte{J2W_LANGUAGE_TYPES[global.ContentType]})
-	stream.Write([]byte{global.Mutability})
+	stream.WriteByte(J2W_LANGUAGE_TYPES[global.ContentType])
+	stream.WriteByte(global.Mutability)
 }
 
 // Generates a [resizable_limits](https://github.com/WebAssembly/design/blob/master/BinaryEncoding.md#resizable_limits)
@@ -254,7 +256,7 @@ func (typeGenerators) InitExpr(op OP, stream *Stream) {
 type immediataryGenerators struct{}
 
 func (immediataryGenerators) Varuint1(j int8, stream *Stream) *Stream {
-	stream.Write([]byte{byte(j)})
+	stream.WriteByte(byte(j))
 	return stream
 }
 
@@ -284,7 +286,7 @@ func (immediataryGenerators) Uint64(j []byte, stream *Stream) *Stream {
 }
 
 func (immediataryGenerators) BlockType(j string, stream *Stream) *Stream {
-	stream.Write([]byte{J2W_LANGUAGE_TYPES[j]})
+	stream.WriteByte(J2W_LANGUAGE_TYPES[j])
 	return stream
 }
 
@@ -301,9 +303,8 @@ func (immediataryGenerators) BrTable(j JSON, stream *Stream) *Stream {
 
 func (immediataryGenerators) CallIndirect(j JSON, stream *Stream) *Stream {
 	index := j["index"]
-	reserved := j["reserved"].(byte)
 	EncodeULEB128(index.(uint64), stream)
-	stream.Write([]byte{reserved})
+	stream.WriteByte(j["reserved"].(byte))
 	return stream
 }
 
@@ -332,10 +333,10 @@ func (entryGenerators) Type(entry TypeEntry, stream *Stream) []byte {
 
 	// number of return types
 	if entry.ReturnType != "" {
-		stream.Write([]byte{1})
-		stream.Write([]byte{J2W_LANGUAGE_TYPES[entry.ReturnType]})
+		stream.WriteByte(1)
+		stream.WriteByte(J2W_LANGUAGE_TYPES[entry.ReturnType])
 	} else {
-		stream.Write([]byte{0})
+		stream.WriteByte(0)
 	}
 
 	return stream.Bytes()
@@ -351,7 +352,7 @@ func (entryGenerators) Import(entry ImportEntry, stream *Stream) {
 	EncodeULEB128(uint64(len(fieldStr)), stream)
 	stream.Write([]byte(fieldStr))
 
-	stream.Write([]byte{J2W_EXTERNAL_KIND[entry.Kind]})
+	stream.WriteByte(J2W_EXTERNAL_KIND[entry.Kind])
 
 	switch entry.Kind {
 	case "function":
@@ -388,7 +389,7 @@ func (entryGenerators) Memory(entry MemLimits, stream *Stream) {
 func (entryGenerators) Export(entry ExportEntry, stream *Stream) *Stream {
 	EncodeULEB128(uint64(len(entry.FieldStr)), stream)
 	stream.Write([]byte(entry.FieldStr))
-	stream.Write([]byte{J2W_EXTERNAL_KIND[entry.Kind]})
+	stream.WriteByte(J2W_EXTERNAL_KIND[entry.Kind])
 	EncodeULEB128(uint64(entry.Index), stream)
 	return stream
 }
@@ -409,7 +410,7 @@ func (entryGenerators) Code(entry CodeBody, stream *Stream) *Stream {
 	EncodeULEB128(uint64(len(entry.Locals)), codeStream)
 	for _, local := range entry.Locals {
 		EncodeULEB128(uint64(local.Count), codeStream)
-		codeStream.Write([]byte{J2W_LANGUAGE_TYPES[local.Type]})
+		codeStream.WriteByte(J2W_LANGUAGE_TYPES[local.Type])
 	}
 
 	// write opcode
@@ -465,7 +466,7 @@ func GenerateOP(op OP, stream *Stream) *Stream {
 		name = op.ReturnType + "." + name
 	}
 
-	stream.Write([]byte{J2W_OPCODES[name]})
+	stream.WriteByte(J2W_OPCODES[name])
 
 	immediateKey := op.Name
 	if immediateKey == "const" {
@@ -494,6 +495,8 @@ func GenerateOP(op OP, stream *Stream) *Stream {
 			immeGen.MemoryImmediate(op.Immediates.(JSON), stream)
 		case "br_table":
 			immeGen.BrTable(op.Immediates.(JSON), stream)
+		default:
+			panic(fmt.Sprintf("invalid op immediate: %s", immediates))
 		}
 	}
 	return stream
@@ -510,7 +513,7 @@ func GenerateSection(j JSON, stream *Stream) *Stream {
 		name = nameinterf.(string)
 	}
 	payload := NewStream(nil)
-	stream.Write([]byte{J2W_SECTION_IDS[name]})
+	stream.WriteByte(J2W_SECTION_IDS[name])
 
 	if name == "custom" {
 		sectionName := j["section_name"].(string)
@@ -584,6 +587,8 @@ func GenerateSection(j JSON, stream *Stream) *Stream {
 				for _, entry := range entries {
 					entryGen.Data(entry, payload)
 				}
+			default:
+				panic(fmt.Sprintf("invalid section name: %s", name))
 			}
 		}
 	}
